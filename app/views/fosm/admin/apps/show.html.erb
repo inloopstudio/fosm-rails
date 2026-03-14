@@ -1,0 +1,111 @@
+<div class="p-6 space-y-8">
+  <div class="flex items-center gap-3">
+    <%= link_to "← FOSM Admin", fosm.admin_root_path, class: "text-sm text-blue-600 hover:underline" %>
+  </div>
+
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900"><%= @model_class.name.demodulize.humanize %></h1>
+      <p class="text-sm text-gray-500"><%= @model_class.name %> &middot; <%= @total %> total records</p>
+      <% if @stuck_count > 0 %>
+        <p class="text-sm text-amber-600 mt-1">&#x26A0; <%= @stuck_count %> record<%= @stuck_count == 1 ? "" : "s" %> may be stuck (no transition in 7+ days)</p>
+      <% end %>
+    </div>
+    <div class="flex gap-2 shrink-0">
+      <%= link_to "View all #{@model_class.name.demodulize.humanize.pluralize}",
+                  main_app.send("fosm_#{@slug.pluralize}_path"),
+                  class: "text-sm border border-gray-200 bg-white text-gray-700 px-3 py-1.5 rounded hover:bg-gray-50" %>
+      <%= link_to "+ New #{@model_class.name.demodulize.humanize}",
+                  main_app.send("new_fosm_#{@slug}_path"),
+                  class: "text-sm bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-700" %>
+    </div>
+  </div>
+
+  <!-- State distribution -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <h2 class="font-semibold text-gray-900 mb-4">State Distribution</h2>
+    <div class="space-y-2">
+      <% @state_counts.each do |state_name, count| %>
+        <% state_def = @lifecycle.find_state(state_name) %>
+        <div class="flex items-center gap-3">
+          <span class="w-28 text-sm text-gray-600 flex items-center gap-1">
+            <%= state_name %>
+            <% if state_def&.initial? %><span class="text-xs text-blue-500">(initial)</span><% end %>
+            <% if state_def&.terminal? %><span class="text-xs text-red-500">(terminal)</span><% end %>
+          </span>
+          <div class="flex-1 h-2 bg-gray-100 rounded">
+            <% pct = @total > 0 ? (count.to_f / @total * 100).round : 0 %>
+            <div class="h-2 bg-blue-500 rounded" style="width: <%= pct %>%"></div>
+          </div>
+          <span class="text-sm font-medium text-gray-900 w-8 text-right"><%= count %></span>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <!-- Lifecycle definition -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <h2 class="font-semibold text-gray-900 mb-4">Lifecycle Definition</h2>
+    <table class="w-full text-sm">
+      <thead class="text-gray-500 text-xs uppercase border-b">
+        <tr>
+          <th class="pb-2 text-left">Event</th>
+          <th class="pb-2 text-left">From</th>
+          <th class="pb-2 text-left">To</th>
+          <th class="pb-2 text-left">Guards</th>
+          <th class="pb-2 text-left">Side Effects</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        <% @lifecycle.events.each do |event| %>
+          <tr>
+            <td class="py-2 font-medium text-gray-900"><%= event.name %></td>
+            <td class="py-2 text-orange-600"><%= event.from_states.join(", ") %></td>
+            <td class="py-2 text-green-600"><%= event.to_state %></td>
+            <td class="py-2 text-gray-500"><%= event.guards.map(&:name).join(", ").presence || "—" %></td>
+            <td class="py-2 text-gray-500"><%= event.side_effects.map(&:name).join(", ").presence || "—" %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Recent transitions -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <h2 class="font-semibold text-gray-900 mb-4">Recent Transitions</h2>
+    <% if @recent_transitions.any? %>
+      <table class="w-full text-sm">
+        <thead class="text-gray-500 text-xs uppercase border-b">
+          <tr>
+            <th class="pb-2 text-left">Record ID</th>
+            <th class="pb-2 text-left">Event</th>
+            <th class="pb-2 text-left">From &rarr; To</th>
+            <th class="pb-2 text-left">Actor</th>
+            <th class="pb-2 text-left">When</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          <% @recent_transitions.each do |t| %>
+            <tr>
+              <td class="py-2 text-gray-600">
+                <%= link_to "##{t.record_id}",
+                            main_app.send("fosm_#{@slug}_path", t.record_id),
+                            class: "text-blue-600 hover:underline" %>
+              </td>
+              <td class="py-2 font-medium"><%= t.event_name %></td>
+              <td class="py-2">
+                <span class="text-orange-600"><%= t.from_state %></span>
+                <span class="text-gray-400"> &rarr; </span>
+                <span class="text-green-600"><%= t.to_state %></span>
+              </td>
+              <td class="py-2 text-gray-500"><%= t.actor_label || t.actor_type || "—" %></td>
+              <td class="py-2 text-gray-400"><%= t.created_at.strftime("%b %d %H:%M") %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% else %>
+      <p class="text-sm text-gray-400">No transitions recorded yet.</p>
+    <% end %>
+  </div>
+</div>

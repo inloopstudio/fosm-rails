@@ -1,0 +1,57 @@
+<div class="p-6 max-w-2xl space-y-6">
+  <div class="flex items-center gap-3">
+    <%%= link_to "← Back", fosm_<%= plural_name %>_path, class: "text-sm text-blue-600 hover:underline" %>
+  </div>
+
+  <div class="bg-white border border-gray-200 rounded-lg p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-bold text-gray-900"><%= class_name.humanize %> #<%%= @record.id %></h1>
+      <span class="text-sm font-medium bg-blue-50 text-blue-700 px-3 py-1 rounded-full"><%%= @record.state %></span>
+    </div>
+
+<% fields_for_migration.each do |field| %>
+    <div>
+      <span class="text-xs text-gray-500 uppercase tracking-wide"><%= field[:name].humanize %></span>
+      <p class="text-gray-900 mt-0.5"><%%= @record.<%= field[:name] %> || "—" %></p>
+    </div>
+<% end %>
+  </div>
+
+  <%% if @record.available_events.any? %>
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+      <h2 class="font-semibold text-gray-900 mb-3">Available Actions</h2>
+      <div class="flex gap-2 flex-wrap">
+        <%% @record.available_events.each do |event| %>
+          <%%= button_to event.to_s.humanize,
+                         fire_event_fosm_<%= file_name %>_path(@record),
+                         params: { event: event },
+                         method: :post,
+                         class: "text-sm bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700" %>
+        <%% end %>
+      </div>
+    </div>
+  <%% end %>
+
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <h2 class="font-semibold text-gray-900 mb-3">Transition History</h2>
+    <%% transitions = Fosm::TransitionLog.for_record("Fosm::<%= class_name %>", @record.id).recent %>
+    <%% if transitions.any? %>
+      <div class="space-y-2">
+        <%% transitions.each do |t| %>
+          <div class="text-sm flex items-center gap-2">
+            <span class="text-orange-600"><%%= t.from_state %></span>
+            <span class="text-gray-400">&rarr;</span>
+            <span class="text-green-600"><%%= t.to_state %></span>
+            <span class="text-gray-400">via <%%= t.event_name %></span>
+            <%% if t.actor_label.present? %>
+              <span class="text-gray-500">by <%%= t.actor_label %></span>
+            <%% end %>
+            <span class="text-gray-400 text-xs"><%%= t.created_at.strftime("%b %d %H:%M") %></span>
+          </div>
+        <%% end %>
+      </div>
+    <%% else %>
+      <p class="text-sm text-gray-400">No transitions yet.</p>
+    <%% end %>
+  </div>
+</div>

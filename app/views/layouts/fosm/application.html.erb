@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>FOSM Admin</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta charset="utf-8">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-50 font-sans">
+    <div class="min-h-screen flex">
+      <!-- Sidebar -->
+      <div class="w-48 bg-white border-r border-gray-200 flex flex-col">
+        <div class="p-4 border-b border-gray-200">
+          <span class="font-bold text-gray-900 text-sm">FOSM</span>
+          <span class="text-xs text-gray-400 block">Admin</span>
+        </div>
+        <nav class="p-3 space-y-1 flex-1">
+          <%= link_to "Dashboard", fosm.admin_root_path, class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
+          <%= link_to "Transitions", fosm.admin_transitions_path, class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
+          <%= link_to "Webhooks", fosm.admin_webhooks_path, class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
+        </nav>
+      </div>
+
+      <!-- Main content -->
+      <div class="flex-1 overflow-auto">
+        <% if notice.present? %>
+          <div class="bg-green-50 border-b border-green-200 px-6 py-3 text-sm text-green-700"><%= notice %></div>
+        <% end %>
+        <% if alert.present? %>
+          <div class="bg-red-50 border-b border-red-200 px-6 py-3 text-sm text-red-700"><%= alert %></div>
+        <% end %>
+        <%= yield %>
+      </div>
+    </div>
+  </body>
+</html>

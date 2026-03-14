@@ -1,0 +1,65 @@
+<div class="p-6 space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Transition Log</h1>
+    <p class="text-sm text-gray-500 mt-1">Complete audit trail of every FOSM state transition</p>
+  </div>
+
+  <!-- Filters -->
+  <%= form_with url: fosm.admin_transitions_path, method: :get, class: "flex gap-3 flex-wrap" do |f| %>
+    <%= f.select :model, [["All apps", nil]] + @model_names.map { |n| [n.demodulize, n] },
+                 { selected: params[:model] }, class: "text-sm border border-gray-200 rounded px-2 py-1" %>
+    <%= f.select :actor, [["All actors", nil], ["Human", "human"], ["AI Agent", "agent"]],
+                 { selected: params[:actor] }, class: "text-sm border border-gray-200 rounded px-2 py-1" %>
+    <%= f.submit "Filter", class: "text-sm bg-gray-800 text-white px-3 py-1 rounded hover:bg-gray-700" %>
+    <%= link_to "Clear", fosm.admin_transitions_path, class: "text-sm text-gray-500 py-1" %>
+  <% end %>
+
+  <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-2 text-left">Record</th>
+          <th class="px-4 py-2 text-left">Event</th>
+          <th class="px-4 py-2 text-left">From &rarr; To</th>
+          <th class="px-4 py-2 text-left">Actor</th>
+          <th class="px-4 py-2 text-left">When</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        <% @transitions.each do |t| %>
+          <tr>
+            <td class="px-4 py-2 text-gray-600">
+              <%= t.record_type.demodulize %> #<%= t.record_id %>
+            </td>
+            <td class="px-4 py-2 font-medium text-gray-900"><%= t.event_name %></td>
+            <td class="px-4 py-2">
+              <span class="text-orange-600"><%= t.from_state %></span>
+              <span class="text-gray-400"> &rarr; </span>
+              <span class="text-green-600"><%= t.to_state %></span>
+            </td>
+            <td class="px-4 py-2">
+              <% if t.by_agent? %>
+                <span class="text-purple-600 text-xs font-medium bg-purple-50 px-2 py-0.5 rounded">AI Agent</span>
+              <% else %>
+                <span class="text-gray-500"><%= t.actor_label || t.actor_type || "—" %></span>
+              <% end %>
+            </td>
+            <td class="px-4 py-2 text-gray-400 text-xs"><%= t.created_at.strftime("%b %d %Y %H:%M:%S") %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <% if @total_pages > 1 %>
+    <div class="flex items-center gap-3 text-sm text-gray-600">
+      <% if @current_page > 1 %>
+        <%= link_to "← Prev", fosm.admin_transitions_path(params.permit(:model, :event, :actor).merge(page: @current_page - 1)), class: "text-blue-600 hover:underline" %>
+      <% end %>
+      <span>Page <%= @current_page %> of <%= @total_pages %> (<%= @total_count %> total)</span>
+      <% if @current_page < @total_pages %>
+        <%= link_to "Next →", fosm.admin_transitions_path(params.permit(:model, :event, :actor).merge(page: @current_page + 1)), class: "text-blue-600 hover:underline" %>
+      <% end %>
+    </div>
+  <% end %>
+</div>

@@ -1,0 +1,14 @@
+class CreateFosm<%= class_name.pluralize %> < ActiveRecord::Migration[8.1]
+  def change
+    create_table :fosm_<%= table_name %> do |t|
+      t.string :state, null: false, default: "<%= initial_state %>"
+      t.bigint :created_by_id, null: true  # FK to users — add if you have a users table
+<% fields_for_migration.each do |field| %>
+      t.<%= field[:type] %> :<%= field[:name] %>
+<% end %>
+      t.timestamps
+    end
+
+    add_index :fosm_<%= table_name %>, :state
+  end
+end

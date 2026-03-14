@@ -1,0 +1,82 @@
+<div class="p-6 space-y-8">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">FOSM Admin</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      <%= @total_transitions %> total transitions logged &middot;
+      <%= @apps.size %> registered app<%= @apps.size == 1 ? "" : "s" %>
+    </p>
+  </div>
+
+  <% if @apps.empty? %>
+    <div class="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+      <h2 class="font-semibold text-gray-700">No FOSM apps registered</h2>
+      <p class="text-sm text-gray-500 mt-2">
+        Run <code class="bg-gray-100 px-1 rounded">rails generate fosm:app my_app</code> to create one.
+      </p>
+    </div>
+  <% else %>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <% @apps.each do |app| %>
+        <div class="bg-white border border-gray-200 rounded-lg p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold text-gray-900"><%= app[:name] %></h2>
+            <span class="text-xs text-gray-400"><%= app[:total] %> records</span>
+          </div>
+
+          <div class="space-y-1">
+            <% app[:state_counts].each do |state, count| %>
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-gray-600"><%= state %></span>
+                <span class="font-medium text-gray-900">
+                  <%= count %>
+                  <% if app[:total] > 0 %>
+                    <span class="text-gray-400 font-normal">(<%= (count.to_f / app[:total] * 100).round %>%)</span>
+                  <% end %>
+                </span>
+              </div>
+              <div class="h-1 bg-gray-100 rounded">
+                <% pct = app[:total] > 0 ? (count.to_f / app[:total] * 100).round : 0 %>
+                <div class="h-1 bg-blue-500 rounded" style="width: <%= pct %>%"></div>
+              </div>
+            <% end %>
+          </div>
+
+          <%= link_to "View Details →", fosm.admin_app_path(app[:slug]), class: "text-sm text-blue-600 hover:underline" %>
+        </div>
+      <% end %>
+    </div>
+
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900 mb-3">Recent Transitions</h2>
+      <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+            <tr>
+              <th class="px-4 py-2 text-left">Record</th>
+              <th class="px-4 py-2 text-left">Event</th>
+              <th class="px-4 py-2 text-left">From &rarr; To</th>
+              <th class="px-4 py-2 text-left">Actor</th>
+              <th class="px-4 py-2 text-left">When</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <% @recent_transitions.each do |t| %>
+              <tr>
+                <td class="px-4 py-2 text-gray-600"><%= t.record_type.demodulize %> #<%= t.record_id %></td>
+                <td class="px-4 py-2 font-medium text-gray-900"><%= t.event_name %></td>
+                <td class="px-4 py-2 text-gray-600">
+                  <span class="text-orange-600"><%= t.from_state %></span>
+                  <span class="text-gray-400"> &rarr; </span>
+                  <span class="text-green-600"><%= t.to_state %></span>
+                </td>
+                <td class="px-4 py-2 text-gray-500"><%= t.actor_label || t.actor_type || "—" %></td>
+                <td class="px-4 py-2 text-gray-400 text-xs"><%= t.created_at.strftime("%b %d %H:%M") %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+      <%= link_to "View all transitions →", fosm.admin_transitions_path, class: "text-sm text-blue-600 hover:underline mt-2 block" %>
+    </div>
+  <% end %>
+</div>

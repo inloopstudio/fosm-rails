@@ -1,0 +1,103 @@
+require_relative "state_definition"
+require_relative "event_definition"
+require_relative "guard_definition"
+require_relative "side_effect_definition"
+
+module Fosm
+  module Lifecycle
+    # Holds the entire lifecycle definition for a FOSM model.
+    # Instantiated once per model class at class load time.
+    class Definition
+      attr_reader :states, :events
+
+      def initialize
+        @states = []
+        @events = []
+        @pending_guards = {}       # event_name => [GuardDefinition, ...]
+        @pending_side_effects = {} # event_name => [SideEffectDefinition, ...]
+      end
+
+      # DSL: declare a state
+      def state(name, initial: false, terminal: false)
+        if initial && @states.any?(&:initial?)
+          raise ArgumentError, "Only one initial state is allowed"
+        end
+        @states << StateDefinition.new(name: name, initial: initial, terminal: terminal)
+      end
+
+      # DSL: declare an event
+      def event(name, from:, to:)
+        event_def = EventDefinition.new(name: name, from: from, to: to)
+
+        # Apply any guards/side_effects declared before this event (unusual but handle it)
+        (@pending_guards[name.to_sym] || []).each { |g| event_def.add_guard(g) }
+        (@pending_side_effects[name.to_sym] || []).each { |se| event_def.add_side_effect(se) }
+
+        @events << event_def
+        event_def
+      end
+
+      # DSL: declare a guard on an event
+      def guard(name, on:, &block)
+        guard_def = GuardDefinition.new(name: name, &block)
+        event_def = find_event(on)
+        if event_def
+          event_def.add_guard(guard_def)
+        else
+          # Event may be declared after guard — store for later
+          @pending_guards[on.to_sym] ||= []
+          @pending_guards[on.to_sym] << guard_def
+        end
+      end
+
+      # DSL: declare a side effect on an event
+      def side_effect(name, on:, &block)
+        side_effect_def = SideEffectDefinition.new(name: name, &block)
+        event_def = find_event(on)
+        if event_def
+          event_def.add_side_effect(side_effect_def)
+        else
+          @pending_side_effects[on.to_sym] ||= []
+          @pending_side_effects[on.to_sym] << side_effect_def
+        end
+      end
+
+      def initial_state
+        @states.find(&:initial?)
+      end
+
+      def find_event(name)
+        @events.find { |e| e.name == name.to_sym }
+      end
+
+      def find_state(name)
+        @states.find { |s| s.name == name.to_sym }
+      end
+
+      def state_names
+        @states.map(&:name).map(&:to_s)
+      end
+
+      def event_names
+        @events.map(&:name)
+      end
+
+      # Returns events valid from the given state
+      def available_events_from(state)
+        @events.select { |e| e.valid_from?(state) }
+      end
+
+      # Returns a hash suitable for rendering a state diagram
+      def to_diagram_data
+        {
+          states: @states.map { |s| { name: s.name, initial: s.initial?, terminal: s.terminal? } },
+          transitions: @events.map { |e|
+            e.from_states.map { |from|
+              { event: e.name, from: from, to: e.to_state, guards: e.guards.map(&:name) }
+            }
+          }.flatten
+        }
+      end
+    end
+  end
+end

@@ -1,0 +1,26 @@
+module Fosm
+  # AI Agent for <%= class_name %> powered by Gemlings.
+  #
+  # Standard tools are auto-generated from the lifecycle definition:
+  #   - list_<%= plural_name %>           List records, optionally filtered by state
+  #   - get_<%= file_name %>              Get a specific record by ID
+  #   - get_available_events_for_<%= file_name %>  What events can fire from current state
+  #   - get_transition_history_for_<%= file_name %> Full audit trail for a record
+  #   - [event_name]_<%= file_name %>    One tool per lifecycle event (bounded!)
+  #
+  # The AI agent CANNOT bypass the state machine. If a transition isn't valid
+  # from the current state, the tool returns { success: false, error: ... }.
+  #
+  # Add custom tools below using fosm_tool:
+  class <%= class_name %>Agent < Fosm::Agent
+    model_class Fosm::<%= class_name %>
+
+    # Example custom tool:
+    # fosm_tool :find_<%= plural_name %>_needing_attention,
+    #           description: "Find <%= plural_name %> that need human review" do
+    #   Fosm::<%= class_name %>.where(state: "<%= states_list[0] %>")
+    #                          .where("created_at < ?", 48.hours.ago)
+    #                          .map { |r| { id: r.id, state: r.state } }
+    # end
+  end
+end

@@ -1,0 +1,45 @@
+<div class="p-6 max-w-lg space-y-6">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Add Webhook</h1>
+    <p class="text-sm text-gray-500 mt-1">FOSM will POST a JSON payload to this URL when the event fires.</p>
+  </div>
+
+  <%= form_with model: @webhook, url: fosm.admin_webhooks_path, class: "space-y-4" do |f| %>
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">FOSM App</label>
+      <%= f.select :model_class_name,
+                   @apps.map { |slug, klass| [klass.name.demodulize.humanize, klass.name] },
+                   { prompt: "Select an app" },
+                   class: "w-full border border-gray-200 rounded px-3 py-2 text-sm" %>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Event</label>
+      <%= f.text_field :event_name, placeholder: "e.g. send_invoice, pay, cancel",
+                       class: "w-full border border-gray-200 rounded px-3 py-2 text-sm" %>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Webhook URL</label>
+      <%= f.url_field :url, placeholder: "https://your-app.com/webhooks/fosm",
+                      class: "w-full border border-gray-200 rounded px-3 py-2 text-sm" %>
+    </div>
+
+    <div>
+      <label class="block text-sm font-medium text-gray-700 mb-1">Secret Token (optional)</label>
+      <%= f.text_field :secret_token, placeholder: "Used for X-FOSM-Signature HMAC verification",
+                       class: "w-full border border-gray-200 rounded px-3 py-2 text-sm" %>
+      <p class="text-xs text-gray-500 mt-1">FOSM will include a HMAC-SHA256 signature header if set.</p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <%= f.check_box :active, class: "rounded" %>
+      <label class="text-sm text-gray-700">Active</label>
+    </div>
+
+    <div class="flex gap-3 pt-2">
+      <%= f.submit "Create Webhook", class: "bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700" %>
+      <%= link_to "Cancel", fosm.admin_webhooks_path, class: "text-sm text-gray-500 py-2" %>
+    </div>
+  <% end %>
+</div>

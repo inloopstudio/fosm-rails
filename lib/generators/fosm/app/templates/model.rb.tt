@@ -1,0 +1,31 @@
+module Fosm
+  class <%= class_name %> < ApplicationRecord
+    include Fosm::Lifecycle
+
+    self.table_name = "fosm_<%= table_name %>"
+
+    # Uncomment if your app has a User model:
+    # belongs_to :created_by, class_name: "User", optional: true
+
+    lifecycle do
+      # States — first state is the initial state
+<% states_list.each_with_index do |state, index| %>
+      state :<%= state %><%= index == 0 ? ", initial: true" : "" %>
+<% end %>
+
+      # Events — define transitions between states
+      # event :activate, from: :<%= states_list[0] %>, to: :<%= states_list[1] || states_list[0] %>
+      # event :complete, from: :<%= states_list[1] || states_list[0] %>, to: :<%= states_list.last %>
+
+      # Guards — conditions that must be true for an event to fire
+      # guard :has_required_data, on: :activate do |record|
+      #   record.some_field.present?
+      # end
+
+      # Side effects — actions that run after a successful transition
+      # side_effect :notify_stakeholders, on: :activate do |record, transition|
+      #   # Your notification code here
+      # end
+    end
+  end
+end
