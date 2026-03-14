@@ -17,10 +17,13 @@
           <span class="text-xs text-gray-400 block">Admin</span>
         </div>
         <nav class="p-3 space-y-1 flex-1">
-          <%= link_to "Dashboard", fosm.admin_root_path, class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
+          <%= link_to "Dashboard",   fosm.admin_root_path,        class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
           <%= link_to "Transitions", fosm.admin_transitions_path, class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
-          <%= link_to "Webhooks", fosm.admin_webhooks_path, class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
+          <%= link_to "Webhooks",    fosm.admin_webhooks_path,    class: "block px-3 py-2 rounded text-sm text-gray-700 hover:bg-gray-100" %>
         </nav>
+        <div class="p-3 border-t border-gray-100">
+          <%= link_to "Settings", fosm.admin_settings_path, class: "block px-3 py-2 rounded text-sm text-gray-500 hover:bg-gray-100" %>
+        </div>
       </div>
 
       <!-- Main content -->

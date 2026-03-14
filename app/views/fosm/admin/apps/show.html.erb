@@ -18,6 +18,9 @@
       <%= link_to "+ New #{@model_class.name.demodulize.humanize}",
                   main_app.send("new_fosm_#{@slug}_path"),
                   class: "text-sm bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-700" %>
+      <%= link_to "Agent Tools",
+                  fosm.agent_admin_app_path(@slug),
+                  class: "text-sm border border-purple-200 bg-purple-50 text-purple-700 px-3 py-1.5 rounded hover:bg-purple-100" %>
     </div>
   </div>
 

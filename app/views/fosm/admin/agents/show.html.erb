@@ -1,0 +1,166 @@
+<div class="p-6 space-y-8">
+  <div class="flex items-center gap-3">
+    <%= link_to "← #{@model_class.name.demodulize.humanize}", fosm.admin_app_path(@slug), class: "text-sm text-blue-600 hover:underline" %>
+  </div>
+
+  <!-- Header -->
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900"><%= @model_class.name.demodulize.humanize %> Agent</h1>
+      <p class="text-sm text-gray-500 mt-1">
+        <% if @agent_class %>
+          <span class="text-green-600 font-medium">&#10003; <%= @agent_class.name %></span>
+          &middot; model: <code class="bg-gray-100 px-1 rounded text-xs"><%= @agent_class.default_model %></code>
+        <% else %>
+          <span class="text-amber-600">No agent class found.</span>
+          Define <code class="bg-gray-100 px-1 rounded text-xs">Fosm::<%= @model_class.name.demodulize %>Agent &lt; Fosm::Agent</code>
+          in <code class="bg-gray-100 px-1 rounded text-xs">app/agents/fosm/<%= @mn %>_agent.rb</code>
+        <% end %>
+      </p>
+    </div>
+    <div class="text-xs px-2 py-1 rounded border bg-green-50 border-green-200 text-green-700">
+      &#10003; Gemlings <%= Gemlings::VERSION rescue "loaded" %>
+    </div>
+  </div>
+
+  <!-- Chat CTA -->
+  <div class="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-lg px-5 py-3">
+    <div>
+      <p class="text-sm font-medium text-purple-900">Chat with this agent</p>
+      <p class="text-xs text-purple-600 mt-0.5">Multi-turn conversation · agent uses lifecycle tools only · reasoning visible</p>
+    </div>
+    <%= link_to "Chat with Agent →",
+                fosm.agent_chat_admin_app_path(@slug),
+                class: "text-sm bg-purple-700 text-white px-4 py-2 rounded-lg hover:bg-purple-800 shrink-0" %>
+  </div>
+
+  <!-- Tool catalog -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5 space-y-4">
+    <div>
+      <h2 class="font-semibold text-gray-900">Auto-generated Tools</h2>
+      <p class="text-xs text-gray-400 mt-0.5">
+        These tools are derived from the lifecycle definition and exposed to any Gemlings agent.
+        The agent can <strong>only</strong> act through these tools — bounded autonomy.
+      </p>
+    </div>
+
+    <% read_tools  = @tools.select { |t| t[:category] == :read } %>
+    <% mutate_tools = @tools.select { |t| t[:category] == :mutate } %>
+
+    <div class="space-y-3">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Read tools (safe, no state change)</p>
+      <% read_tools.each do |tool| %>
+        <div class="flex items-start gap-3 text-sm border-l-2 border-blue-200 pl-3 py-1">
+          <div class="flex-1">
+            <code class="font-mono text-blue-700 text-xs"><%= tool[:name] %></code>
+            <p class="text-gray-500 text-xs mt-0.5"><%= tool[:description] %></p>
+          </div>
+          <div class="text-xs text-gray-400 font-mono shrink-0">
+            <% tool[:params].each do |k, v| %>
+              <span><%= k %>: <em><%= v %></em></span>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="space-y-3">
+      <p class="text-xs font-medium text-gray-500 uppercase tracking-wide">Mutate tools (fire lifecycle events)</p>
+      <% mutate_tools.each do |tool| %>
+        <div class="flex items-start gap-3 text-sm border-l-2 border-orange-200 pl-3 py-1">
+          <div class="flex-1">
+            <code class="font-mono text-orange-700 text-xs"><%= tool[:name] %></code>
+            <p class="text-gray-500 text-xs mt-0.5"><%= tool[:description] %></p>
+          </div>
+          <div class="text-xs text-gray-400 font-mono shrink-0">id: <em>Record ID</em></div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <!-- Direct Tool Tester -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5 space-y-4">
+    <div>
+      <h2 class="font-semibold text-gray-900">Tool Tester</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Invoke tools directly — no Gemlings or LLM required. Results show exactly what the agent would receive.</p>
+    </div>
+
+    <div class="flex gap-3 flex-wrap items-end">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Tool</label>
+        <select id="tool-select" class="text-sm border border-gray-200 rounded px-2 py-1.5 min-w-64">
+          <optgroup label="Read tools">
+            <% @tools.select { |t| t[:category] == :read }.each do |tool| %>
+              <option value="<%= tool[:name] %>" data-needs-id="<%= tool[:requires_id] %>">
+                <%= tool[:name] %>
+              </option>
+            <% end %>
+          </optgroup>
+          <optgroup label="Mutate tools (fire events)">
+            <% @tools.select { |t| t[:category] == :mutate }.each do |tool| %>
+              <option value="<%= tool[:name] %>" data-needs-id="true">
+                <%= tool[:name] %>
+              </option>
+            <% end %>
+          </optgroup>
+        </select>
+      </div>
+
+      <div id="id-field">
+        <label class="block text-xs text-gray-500 mb-1">Record ID / State filter</label>
+        <input id="record-id" type="text" placeholder="e.g. 1 or 'draft'"
+               class="text-sm border border-gray-200 rounded px-2 py-1.5 w-40" />
+      </div>
+
+      <button id="invoke-btn" onclick="invokeTool()"
+              class="text-sm bg-gray-900 text-white px-4 py-1.5 rounded hover:bg-gray-700">
+        Run Tool
+      </button>
+    </div>
+
+    <div id="tool-result" class="hidden">
+      <p class="text-xs text-gray-500 mb-1">Result</p>
+      <pre id="result-content" class="bg-gray-50 border border-gray-200 rounded p-3 text-xs font-mono overflow-auto max-h-64"></pre>
+    </div>
+  </div>
+
+  <!-- System Prompt -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
+    <h2 class="font-semibold text-gray-900">System Prompt</h2>
+    <p class="text-xs text-gray-400">This is the system instruction injected into the LLM when using <code>build_agent</code>. It communicates FOSM constraints so the agent respects the state machine.</p>
+    <pre class="bg-gray-50 border border-gray-200 rounded p-3 text-xs font-mono whitespace-pre-wrap"><%= @system_prompt %></pre>
+  </div>
+</div>
+
+<script>
+  async function invokeTool() {
+    const tool = document.getElementById('tool-select').value;
+    const id   = document.getElementById('record-id').value;
+    const btn  = document.getElementById('invoke-btn');
+    const resultBox = document.getElementById('tool-result');
+    const resultContent = document.getElementById('result-content');
+
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+
+    try {
+      const resp = await fetch('<%= fosm.agent_invoke_admin_app_path(@slug) %>', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify({ tool, record_id: id, filter: id })
+      });
+      const data = await resp.json();
+      resultContent.textContent = JSON.stringify(data, null, 2);
+      resultBox.classList.remove('hidden');
+    } catch(e) {
+      resultContent.textContent = 'Error: ' + e.message;
+      resultBox.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Run Tool';
+    }
+  }
+</script>

@@ -20,8 +20,6 @@ Gem::Specification.new do |spec|
 
   spec.required_ruby_version = ">= 3.1"
 
-  spec.add_dependency "rails", ">= 8.1"
-  # gemlings is required for AI agent support.
-  # Add `gem "gemlings"` to your app's Gemfile to enable Fosm::Agent.
-  # spec.add_dependency "gemlings", ">= 0.1"  # declared here for documentation only
+  spec.add_dependency "rails",    ">= 8.1"
+  spec.add_dependency "gemlings", ">= 0.3"
 end

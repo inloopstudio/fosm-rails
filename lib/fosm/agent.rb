@@ -2,7 +2,7 @@ module Fosm
   # Base class for FOSM AI agents powered by Gemlings.
   #
   # Each generated FOSM app gets an agent class that inherits from this.
-  # Gemlings::Tool instances are auto-generated from the lifecycle definition,
+  # ::Gemlings::Tool instances are auto-generated from the lifecycle definition,
   # giving the AI agent a bounded, machine-enforced set of actions.
   #
   # The AI agent can ONLY fire lifecycle events. It cannot directly update state.
@@ -10,7 +10,7 @@ module Fosm
   # If a transition isn't valid, the tool returns { success: false } — the agent
   # cannot bypass the machine.
   #
-  # Requires: gem "gemlings" in your Gemfile.
+  # Gemlings is a required dependency of fosm-rails (declared in gemspec).
   # See: https://github.com/khasinski/gemlings
   #
   # Usage:
@@ -51,7 +51,7 @@ module Fosm
         @default_model || "anthropic/claude-sonnet-4-20250514"
       end
 
-      # Declare a custom Gemlings tool using the inline Gemlings.tool API.
+      # Declare a custom Gemlings tool using the inline ::Gemlings.tool API.
       #
       # @param name [Symbol] snake_case tool name
       # @param description [String] what this tool does (shown to the LLM)
@@ -78,20 +78,16 @@ module Fosm
         @tools ||= build_all_tools
       end
 
-      # Builds and returns a configured Gemlings::CodeAgent (default) or
-      # Gemlings::ToolCallingAgent ready to run tasks within FOSM constraints.
+      # Builds and returns a configured ::Gemlings::CodeAgent (default) or
+      # ::Gemlings::ToolCallingAgent ready to run tasks within FOSM constraints.
       #
       # @param model [String] override the default model, e.g. "openai/gpt-4o"
       # @param agent_type [Symbol] :code (default) or :tool_calling
       # @param instructions [String] extra instructions appended to system prompt
-      # @param kwargs [Hash] additional Gemlings::CodeAgent options
+      # @param kwargs [Hash] additional ::Gemlings::CodeAgent options
       #   (max_steps:, planning_interval:, callbacks:, output_type:, etc.)
-      def build_agent(model: nil, agent_type: :code, instructions: nil, **kwargs)
-        unless defined?(Gemlings)
-          raise LoadError, "Gemlings is required for FOSM agents. Add `gem 'gemlings'` to your Gemfile."
-        end
-
-        agent_class = agent_type == :tool_calling ? Gemlings::ToolCallingAgent : Gemlings::CodeAgent
+      def build_agent(model: nil, agent_type: :tool_calling, instructions: nil, **kwargs)
+        agent_class = agent_type == :tool_calling ? ::Gemlings::ToolCallingAgent : ::Gemlings::CodeAgent
 
         agent_class.new(
           model: model || default_model,
@@ -115,14 +111,14 @@ module Fosm
         standard + custom
       end
 
-      # Generates Gemlings tools from the lifecycle definition using Gemlings.tool inline API.
+      # Generates Gemlings tools from the lifecycle definition using ::Gemlings.tool inline API.
       # Creates: list, get, available_events, transition_history, + one per event.
       def build_standard_tools(klass, lifecycle)
         mn = klass.name.demodulize.underscore # e.g. "invoice"
         tools = []
 
         # list_invoices — list all records, optionally filtered by state
-        tools << Gemlings.tool(
+        tools << ::Gemlings.tool(
           :"list_#{mn.pluralize}",
           "List #{mn.pluralize} with their current state. Pass state: 'draft' to filter.",
           state: "Optional state filter (e.g. 'draft', 'sent')"
@@ -135,7 +131,7 @@ module Fosm
         end
 
         # get_invoice — fetch a single record by ID
-        tools << Gemlings.tool(
+        tools << ::Gemlings.tool(
           :"get_#{mn}",
           "Get a #{mn} by ID with its current state and available lifecycle events.",
           id: "The #{mn} ID (integer)"
@@ -148,7 +144,7 @@ module Fosm
         end
 
         # available_events_for_invoice
-        tools << Gemlings.tool(
+        tools << ::Gemlings.tool(
           :"available_events_for_#{mn}",
           "Returns which lifecycle events can fire on a #{mn} from its current state. Always check this before firing.",
           id: "The #{mn} ID (integer)"
@@ -159,7 +155,7 @@ module Fosm
         end
 
         # transition_history_for_invoice
-        tools << Gemlings.tool(
+        tools << ::Gemlings.tool(
           :"transition_history_for_#{mn}",
           "Returns the full audit trail of every state transition for a #{mn}.",
           id: "The #{mn} ID (integer)"
@@ -179,7 +175,7 @@ module Fosm
           from_desc = event_def.from_states.join(" or ")
           guard_note = event_def.guards.any? ? " Requires guards: #{event_def.guards.map(&:name).join(', ')}." : ""
 
-          tools << Gemlings.tool(
+          tools << ::Gemlings.tool(
             :"#{event_def.name}_#{mn}",
             "Fire the '#{event_def.name}' event on a #{mn}. " \
             "Valid from state [#{from_desc}] → #{event_def.to_state}.#{guard_note} " \
@@ -202,7 +198,7 @@ module Fosm
 
       def build_custom_tools
         (@custom_tool_definitions || []).map do |defn|
-          Gemlings.tool(defn[:name], defn[:description], **defn[:inputs], &defn[:block])
+          ::Gemlings.tool(defn[:name], defn[:description], **defn[:inputs], &defn[:block])
         end
       end
 

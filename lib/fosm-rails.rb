@@ -1,3 +1,4 @@
+require "gemlings"
 require "fosm/version"
 require "fosm/errors"
 require "fosm/configuration"

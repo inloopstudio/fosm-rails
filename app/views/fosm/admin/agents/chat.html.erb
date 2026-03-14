@@ -1,0 +1,242 @@
+<div class="flex flex-col h-screen max-h-screen">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between px-5 py-3 bg-white border-b border-gray-200 shrink-0">
+    <div class="flex items-center gap-3">
+      <%= link_to "←", fosm.agent_admin_app_path(@slug), class: "text-gray-400 hover:text-gray-700 text-lg" %>
+      <div>
+        <span class="font-semibold text-gray-900 text-sm"><%= @model_class.name.demodulize.humanize %> Agent Chat</span>
+        <span class="text-xs text-gray-400 ml-2">FOSM bounded autonomy · tools only</span>
+      </div>
+    </div>
+    <button id="new-chat-btn"
+            onclick="resetChat()"
+            class="text-xs border border-gray-200 text-gray-500 px-3 py-1.5 rounded hover:bg-gray-50">
+      New conversation
+    </button>
+  </div>
+
+  <!-- Messages -->
+  <div id="messages" class="flex-1 overflow-y-auto px-5 py-4 space-y-4 bg-gray-50">
+
+    <% if @history.empty? %>
+      <div id="empty-state" class="flex flex-col items-center justify-center h-full text-center text-gray-400 space-y-2 py-20">
+        <div class="text-4xl">🤖</div>
+        <p class="text-sm font-medium text-gray-600">Chat with <%= @model_class.name.demodulize.humanize %> Agent</p>
+        <p class="text-xs max-w-sm">
+          The agent can only act via the lifecycle tools — it cannot bypass guards or jump to terminal states directly.
+        </p>
+        <div class="mt-4 space-y-2 text-left">
+          <p class="text-xs text-gray-400 font-medium">Try asking:</p>
+          <% example_prompts = [
+               "List all #{@mn.pluralize} in draft state",
+               "What events are available for #{@mn} #1?",
+               "Cancel #{@mn} #2"
+          ] %>
+          <% example_prompts.each do |prompt| %>
+            <button onclick="sendMessage(<%= prompt.to_json %>)"
+                    class="block w-full text-left text-xs bg-white border border-gray-200 rounded-lg px-3 py-2 hover:border-gray-300 hover:bg-gray-50 text-gray-600">
+              <%= prompt %>
+            </button>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+
+    <% @history.each do |msg| %>
+      <% if msg[:role] == "user" || msg["role"] == "user" %>
+        <div class="flex justify-end">
+          <div class="bg-gray-800 text-white text-sm rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-lg">
+            <%= (msg[:content] || msg["content"]) %>
+          </div>
+        </div>
+      <% else %>
+        <% content = msg[:content] || msg["content"] %>
+        <% steps = msg[:steps] || msg["steps"] || [] %>
+        <div class="flex flex-col gap-1 max-w-2xl">
+          <div class="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-800 whitespace-pre-wrap"><%= content %></div>
+          <% if steps.any? %>
+            <details class="text-xs text-gray-400 cursor-pointer select-none ml-1">
+              <summary class="hover:text-gray-600"><%= steps.size %> step<%= steps.size == 1 ? "" : "s" %> · expand reasoning</summary>
+              <div class="mt-1 space-y-1 ml-2 border-l-2 border-gray-100 pl-3">
+                <% steps.each do |step| %>
+                  <% step = step.transform_keys(&:to_s) %>
+                  <div class="py-1">
+                    <% if step["thought"].present? %>
+                      <p class="text-gray-500 italic"><%= step["thought"].to_s.truncate(200) %></p>
+                    <% end %>
+                    <% if step["tool_calls"].present? %>
+                      <% Array(step["tool_calls"]).each do |tc| %>
+                        <% tc = tc.is_a?(Hash) ? tc.transform_keys(&:to_s) : {} %>
+                        <p class="font-mono text-purple-600">
+                          🔧 <%= tc["name"] %><% if tc["args"].present? %>(<%= tc["args"].map { |k,v| "#{k}: #{v.inspect}" }.join(", ") %><% end %>)
+                        </p>
+                      <% end %>
+                    <% end %>
+                    <% if step["observation"].present? %>
+                      <p class="text-green-600 font-mono text-[10px] truncate"><%= step["observation"].to_s.truncate(150) %></p>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+            </details>
+          <% end %>
+        </div>
+      <% end %>
+    <% end %>
+
+    <div id="thinking" class="hidden flex gap-2 items-center text-sm text-gray-400">
+      <div class="flex gap-1">
+        <span class="animate-bounce" style="animation-delay:0ms">●</span>
+        <span class="animate-bounce" style="animation-delay:150ms">●</span>
+        <span class="animate-bounce" style="animation-delay:300ms">●</span>
+      </div>
+      <span>Agent is thinking…</span>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="shrink-0 bg-white border-t border-gray-200 px-4 py-3">
+    <div class="flex gap-2 items-end">
+      <textarea id="chat-input"
+                rows="1"
+                placeholder="Ask the agent something… (Enter to send, Shift+Enter for newline)"
+                class="flex-1 resize-none text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-gray-400 max-h-32 overflow-y-auto"
+                onkeydown="handleKey(event)"
+                oninput="autoResize(this)"></textarea>
+      <button id="send-btn"
+              onclick="sendFromInput()"
+              class="text-sm bg-gray-900 text-white px-4 py-2.5 rounded-xl hover:bg-gray-700 shrink-0">
+        Send
+      </button>
+    </div>
+    <p class="text-[10px] text-gray-300 mt-1 ml-1">
+      Agent has access to: list, get, available_events, transition_history, and fire-event tools.
+    </p>
+  </div>
+</div>
+
+<script>
+const CHAT_SEND_URL  = '<%= fosm.agent_chat_send_admin_app_path(@slug) %>';
+const CHAT_RESET_URL = '<%= fosm.agent_chat_reset_admin_app_path(@slug) %>';
+const CSRF_TOKEN     = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+function scrollBottom() {
+  const el = document.getElementById('messages');
+  el.scrollTop = el.scrollHeight;
+}
+
+function appendMessage(role, content, steps) {
+  const wrap = document.getElementById('messages');
+  const empty = document.getElementById('empty-state');
+  if (empty) empty.remove();
+
+  const div = document.createElement('div');
+
+  if (role === 'user') {
+    div.className = 'flex justify-end';
+    div.innerHTML = `<div class="bg-gray-800 text-white text-sm rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-lg">${escapeHtml(content)}</div>`;
+  } else {
+    div.className = 'flex flex-col gap-1 max-w-2xl';
+    let stepsHtml = '';
+    if (steps && steps.length > 0) {
+      const stepItems = steps.map(s => {
+        let parts = [];
+        if (s.thought) parts.push(`<p class="text-gray-500 italic">${escapeHtml(s.thought.substring(0, 200))}</p>`);
+        if (s.tool_calls) {
+          s.tool_calls.forEach(tc => {
+            const args = tc.args ? Object.entries(tc.args).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(', ') : '';
+            parts.push(`<p class="font-mono text-purple-600">🔧 ${escapeHtml(tc.name)}(${escapeHtml(args)})</p>`);
+          });
+        }
+        if (s.observation) parts.push(`<p class="text-green-600 font-mono text-[10px] truncate">${escapeHtml(String(s.observation).substring(0, 150))}</p>`);
+        return `<div class="py-1">${parts.join('')}</div>`;
+      }).join('');
+      stepsHtml = `<details class="text-xs text-gray-400 cursor-pointer select-none ml-1">
+        <summary class="hover:text-gray-600">${steps.length} step${steps.length === 1 ? '' : 's'} · expand reasoning</summary>
+        <div class="mt-1 space-y-1 ml-2 border-l-2 border-gray-100 pl-3">${stepItems}</div>
+      </details>`;
+    }
+    div.innerHTML = `<div class="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-gray-800 whitespace-pre-wrap">${escapeHtml(content)}</div>${stepsHtml}`;
+  }
+
+  wrap.insertBefore(div, document.getElementById('thinking'));
+  scrollBottom();
+}
+
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  appendMessage('user', text);
+
+  const thinking = document.getElementById('thinking');
+  thinking.classList.remove('hidden');
+  document.getElementById('send-btn').disabled = true;
+  scrollBottom();
+
+  try {
+    const resp = await fetch(CHAT_SEND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF_TOKEN },
+      body: JSON.stringify({ message: text })
+    });
+    const data = await resp.json();
+    if (data.error) {
+      // Translate technical LLM errors into friendly messages
+      let friendly = data.error;
+      if (data.error.includes('trailing whitespace')) {
+        friendly = "I had trouble continuing from the previous message. I've reset my context — please try again.";
+      } else if (data.error.includes('anthropic_api_key') || data.error.includes('Missing configuration')) {
+        friendly = "No API key configured. Set ANTHROPIC_API_KEY (or another provider) and restart the server.";
+      } else if (data.error.includes('LLM API error')) {
+        friendly = "The LLM returned an error: " + data.error.replace(/.*LLM API error:\s*/, '');
+      }
+      appendMessage('agent', '⚠ ' + friendly, []);
+    } else {
+      appendMessage('agent', data.output || '(no response)', data.steps || []);
+    }
+  } catch(e) {
+    appendMessage('agent', '⚠ Something went wrong. Please try again.', []);
+  } finally {
+    thinking.classList.add('hidden');
+    document.getElementById('send-btn').disabled = false;
+  }
+}
+
+function sendFromInput() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  autoResize(input);
+  sendMessage(text);
+}
+
+async function resetChat() {
+  if (!confirm('Start a new conversation? This will clear the current context.')) return;
+  await fetch(CHAT_RESET_URL, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': CSRF_TOKEN }
+  });
+  window.location.reload();
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendFromInput();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 128) + 'px';
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+document.addEventListener('DOMContentLoaded', scrollBottom);
+</script>
