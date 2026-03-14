@@ -19,6 +19,16 @@ module Fosm
       # fix is already present. If Gemlings merges the fix, the patch becomes a no-op.
       #
       # Upstream PR: https://github.com/khasinski/gemlings (submitted from fork)
+      #
+      # TODO: remove these patches once the upstream PR is merged and a fixed version
+      # of gemlings is released. Steps to clean up:
+      #   1. Check if gemlings >= X.Y (the version that includes the fix) is the minimum
+      #      required version in fosm-rails.gemspec.
+      #   2. Delete the two `unless` blocks below (lines ~37-104).
+      #   3. Remove the `_gemlings_dir`, `_memory_text`, `_adapter_text` variables.
+      #   4. Update AGENTS.md "Compatibility note" section to remove the patch description.
+      #   5. Bump fosm-rails version with a note in CHANGELOG.
+      # Track: https://github.com/khasinski/gemlings/pull/[PR_NUMBER]
 
       # Read upstream source files directly from the gem installation path.
       # We avoid using source_location on the methods themselves because prepend
