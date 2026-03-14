@@ -56,6 +56,23 @@ That block is the complete lifecycle specification. There is no path from `draft
 
 ---
 
+## The abstraction: one lifecycle definition, three superpowers
+
+When a developer writes a lifecycle block and runs the generator, they get three things without writing any additional code:
+
+**1. A CRUD application that enforces the lifecycle**
+The generated controller and views allow users to create records and fire transitions. The UI only offers valid actions — the machine decides what buttons appear. Guards, terminal states, and invalid transitions are enforced at the Rails level.
+
+**2. An immutable audit trail**
+Every state change is written to `fosm_transition_logs` with the actor, timestamp, and metadata. No configuration required. The log is tamper-proof — read-only at the database level.
+
+**3. A fully-configured AI agent**
+The `Fosm::Agent` base class reads the lifecycle definition at runtime and auto-generates a complete set of Gemlings tools. You don't write a single line of agent code to get a working agent. The agent appears immediately at `/fosm/admin/apps/:slug/agent` after the lifecycle is defined.
+
+This is the beauty of the FOSM abstraction: **the lifecycle is the single source of truth** for the CRUD rules, the audit log schema, and the AI agent's capabilities. They cannot drift from each other because they all read from the same definition.
+
+---
+
 ## Why FOSM matters now
 
 State machines have existed for sixty years. The reason they didn't become the default paradigm for business software is the **specification problem**: you had to enumerate every state, every transition, every guard condition upfront. Business processes are messy, requirements shift, and Agile won because upfront specification is too expensive in a fast-moving world.
@@ -182,6 +199,50 @@ record.fire!(:send_invoice, actor: current_user)
 ```
 
 The transaction ensures that if a side effect raises, the state update is rolled back. The webhook job fires outside the transaction so it doesn't delay the response and doesn't roll back if the HTTP call fails.
+
+---
+
+## Gemlings: the required agent dependency
+
+`gemlings` is declared as a **required dependency** in `fosm-rails.gemspec` — not optional. This is a deliberate design decision: the agent capability is not a plugin or an afterthought, it is a first-class output of every lifecycle definition.
+
+When you add `gem "fosm-rails"` to a project, you get the agent framework automatically. Set `ANTHROPIC_API_KEY` (or another provider key such as `OPENAI_API_KEY` or `GEMINI_API_KEY`) in your environment and the agent is ready to use.
+
+Supported LLM providers come from the `ruby_llm` gem that Gemlings depends on. The default model is `anthropic/claude-sonnet-4-20250514`. Override it per-agent:
+
+```ruby
+class Fosm::InvoiceAgent < Fosm::Agent
+  model_class Fosm::Invoice
+  default_model "openai/gpt-4o"
+end
+```
+
+### Compatibility note
+
+The engine's `initializer "fosm.configuration"` includes two runtime patches to `Gemlings::Memory` and `Gemlings::Models::RubyLLMAdapter`. These patches fix Anthropic API incompatibilities in Gemlings' `ToolCallingAgent`:
+
+1. **Trailing whitespace** — Anthropic rejects assistant messages whose content ends with whitespace. The patch strips it from all messages in `to_messages`.
+2. **Tool result format** — After a tool_use block, Anthropic requires a structured `tool_result` block in the next user message. Gemlings generates a plain `"Observation: ..."` text message instead. The patch rewrites these into the correct `{ type: "tool_result", tool_use_id: ..., content: ... }` format, and `load_messages` uses `role: :tool` when passing them to `ruby_llm`.
+
+These patches are applied once at boot via `prepend` and are invisible to application code. If Gemlings fixes these issues upstream, the patches become no-ops.
+
+---
+
+## The Admin Agent Explorer
+
+For every registered FOSM app, the admin provides two agent-specific pages:
+
+**`/fosm/admin/apps/:slug/agent`** — The Tool Catalog
+- Lists all auto-generated tools (read tools and mutate tools) with their descriptions and parameter signatures
+- Provides a **Direct Tool Tester** — invoke any tool from the browser with no LLM involved. Useful for verifying tool behaviour and debugging lifecycle configurations.
+- Shows the **System Prompt** — the exact constraints injected into the LLM, including terminal states and the instruction to always call `available_events_for_*` before firing.
+
+**`/fosm/admin/apps/:slug/agent/chat`** — The Agent Chat
+- Multi-turn conversation with the live Gemlings agent
+- Each response shows a collapsible **reasoning trace**: tool calls, observations, and the LLM's thought process
+- "New conversation" clears context and starts fresh
+
+The Tool Tester is particularly valuable during development: you can verify that your guards are working correctly, that events are available in the right states, and that your lifecycle behaves as designed — all without writing a test.
 
 ---
 

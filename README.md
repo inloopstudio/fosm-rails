@@ -37,8 +37,9 @@ Add to your `Gemfile`:
 
 ```ruby
 gem "fosm-rails"
-gem "gemlings"  # required for AI agent support
 ```
+
+`gemlings` (the AI agent framework) is a **required dependency** — it is declared in `fosm-rails.gemspec` and installed automatically. You do not need to add it separately. Set the API key for your LLM provider (e.g. `ANTHROPIC_API_KEY`) and the agent is ready to use with no extra configuration.
 
 Run:
 
@@ -102,6 +103,10 @@ config/routes/fosm.rb               # Route registration
 ```
 
 Then run `rails db:migrate` and visit `/fosm/apps/invoices`.
+
+> **One lifecycle definition → three things for free**
+>
+> When you run `rails generate fosm:app invoice`, FOSM generates a model with a lifecycle stub, a CRUD controller, HTML views, database migration, and a Gemlings AI agent — all wired together. Define the states, events, guards, and side effects once. The CRUD UI enforces them. The AI agent is bounded by them. The admin dashboard visualises them.
 
 ---
 
@@ -171,6 +176,8 @@ When a transition is invalid, `fire!` raises a `Fosm::InvalidTransition` error. 
 
 ## AI Agents (powered by Gemlings)
 
+**Every FOSM app automatically has a fully-configured AI agent.** You don't write any agent code to get started — the tools are derived directly from the lifecycle definition at runtime. The agent is bounded by the same rules as the human UI: it can only fire events that exist, it cannot bypass guards, and every action is written to the immutable transition log.
+
 Each FOSM app auto-generates standard Gemlings tools from the lifecycle definition. The agent can only fire events that exist in the machine.
 
 ```ruby
@@ -220,8 +227,11 @@ The engine mounts an admin interface at `/fosm/admin` (access controlled by `con
 
 - **Dashboard** — all FOSM apps with state distribution
 - **App detail** — lifecycle definition table, state distribution chart, stuck record detection
+- **Agent explorer** (`/fosm/admin/apps/:slug/agent`) — the auto-generated tool catalog for the app's AI agent, a direct tool tester (no LLM required), and the system prompt injected into agents
+- **Agent chat** (`/fosm/admin/apps/:slug/agent/chat`) — live multi-turn chat with the agent; see tool calls, thoughts, and state changes in real time
 - **Transition log** — complete audit trail, filterable by app / event / actor (human vs AI agent)
 - **Webhooks** — configure HTTP callbacks for any FOSM event (with HMAC-SHA256 signing)
+- **Settings** — LLM provider key status, engine configuration overview
 
 ---
 
@@ -294,10 +304,12 @@ your_rails_app/
 
 ## Requirements
 
-- Ruby >= 3.2
+- Ruby >= 3.1
 - Rails >= 8.1
-- PostgreSQL (for JSONB columns in transition log) or adapt migrations for other DBs
-- `gemlings` gem (for AI agent support)
+- Any SQL database supported by Rails (SQLite, PostgreSQL, MySQL)
+- `ANTHROPIC_API_KEY` (or another provider key) to use the AI agent chat — see `/fosm/admin/settings` for status
+
+`gemlings` is bundled automatically as a required dependency. No separate configuration needed unless you want to choose a different LLM provider.
 
 ---
 
