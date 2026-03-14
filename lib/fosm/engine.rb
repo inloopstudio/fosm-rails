@@ -13,86 +13,95 @@ module Fosm
       # Host app can configure via config/initializers/fosm.rb
       # Run: rails fosm:install:migrations && rails db:migrate
 
-      # Patch Gemlings::Memory#to_messages to fix two Anthropic API incompatibilities
-      # in the ToolCallingAgent:
+      # ── Gemlings compatibility patches ────────────────────────────────────────
+      # These patches fix Anthropic API incompatibilities in Gemlings' ToolCallingAgent.
+      # Each patch is guarded: it reads the upstream source file and checks whether the
+      # fix is already present. If Gemlings merges the fix, the patch becomes a no-op.
       #
-      # 1. Trailing whitespace: Anthropic rejects assistant content ending with whitespace.
-      # 2. Tool result format: After a tool_use assistant message, Anthropic requires a
-      #    structured tool_result block (not a plain "Observation: ..." user message).
-      #    Gemlings generates the wrong format; we rewrite it here.
-      # Patch Gemlings::Models::RubyLLMAdapter#load_messages to properly add tool
-      # results using RubyLLM's `role: :tool` message type.
-      # Without this, Gemlings passes tool results as plain user messages, causing
-      # Anthropic to reject them with "tool_use without tool_result" errors.
-      ::Gemlings::Models::RubyLLMAdapter.prepend(Module.new do
-        private
+      # Upstream PR: https://github.com/khasinski/gemlings (submitted from fork)
 
-        def load_messages(chat, messages)
-          messages.each do |msg|
-            role    = msg[:role]
-            content = msg[:content]
+      # Read upstream source files directly from the gem installation path.
+      # We avoid using source_location on the methods themselves because prepend
+      # would redirect source_location to this engine file after patching.
+      _gemlings_dir = Gem.loaded_specs["gemlings"]&.gem_dir || ""
+      _memory_text  = File.read(File.join(_gemlings_dir, "lib/gemlings/memory.rb"))              rescue ""
+      _adapter_text = File.read(File.join(_gemlings_dir, "lib/gemlings/models/ruby_llm_adapter.rb")) rescue ""
 
-            case role
-            when "system"
-              chat.with_instructions(content)
-            when "assistant"
-              attrs = { role: :assistant, content: content }
-              if msg[:tool_calls]
-                attrs[:tool_calls] = send(:convert_tool_calls_to_ruby_llm, msg[:tool_calls])
-              end
-              chat.add_message(attrs)
-            else
-              if content.is_a?(Array) && content.all? { |c| c.is_a?(Hash) && (c[:type] == "tool_result" || c["type"] == "tool_result") }
-                content.each do |tr|
-                  chat.add_message(
-                    role: :tool,
-                    content: (tr[:content] || tr["content"]).to_s,
-                    tool_call_id: tr[:tool_use_id] || tr["tool_use_id"]
-                  )
-                end
+      # Patch 1 — Memory#to_messages (needed if upstream hasn't added tool_result + rstrip)
+      #
+      # Fixes:
+      #   a) Trailing whitespace — Anthropic rejects assistant content ending with whitespace.
+      #   b) Tool result format  — Observation: plain text must become a tool_result block.
+      #
+      # Detection: upstream fix will contain both "tool_result" and "rstrip" in to_messages.
+      unless _memory_text.include?("tool_result") && _memory_text.include?("rstrip")
+        ::Gemlings::Memory.prepend(Module.new do
+          def to_messages
+            messages = super
+
+            # Strip trailing whitespace — some LLM APIs (e.g. Anthropic) reject messages
+            # whose string content ends with whitespace.
+            messages = messages.map do |msg|
+              msg[:content].is_a?(String) ? msg.merge(content: msg[:content].rstrip) : msg
+            end
+
+            # Rewrite "Observation: ..." user messages that follow a tool_calls step into
+            # structured tool_result blocks. Anthropic requires that every tool_use in an
+            # assistant message is immediately followed by a tool_result block.
+            result = []
+            messages.each do |msg|
+              prev = result.last
+              if prev && prev[:role] == "assistant" && prev[:tool_calls].present? &&
+                 msg[:role] == "user" && msg[:content].is_a?(String) && msg[:content].start_with?("Observation:")
+                observation = msg[:content].sub(/\AObservation:\s*/, "").strip
+                tool_results = prev[:tool_calls].map { |tc| { type: "tool_result", tool_use_id: tc.id, content: observation } }
+                result << msg.merge(content: tool_results)
               else
-                chat.add_message(role: role.to_sym, content: content || "")
+                result << msg
+              end
+            end
+
+            result
+          end
+        end)
+      end
+
+      # Patch 2 — RubyLLMAdapter#load_messages (needed if upstream hasn't added tool_result handling)
+      #
+      # Fixes: tool_result content arrays must be passed to ruby_llm as role: :tool messages
+      # with a tool_call_id, not as plain user text. Without this, ruby_llm sends a malformed
+      # payload that Anthropic rejects with "tool_use without tool_result" errors.
+      #
+      # Detection: upstream fix will contain "tool_result" in load_messages.
+      unless _adapter_text.include?("tool_result")
+        ::Gemlings::Models::RubyLLMAdapter.prepend(Module.new do
+          private
+
+          def load_messages(chat, messages)
+            messages.each do |msg|
+              role    = msg[:role]
+              content = msg[:content]
+
+              case role
+              when "system"
+                chat.with_instructions(content)
+              when "assistant"
+                attrs = { role: :assistant, content: content }
+                attrs[:tool_calls] = send(:convert_tool_calls_to_ruby_llm, msg[:tool_calls]) if msg[:tool_calls]
+                chat.add_message(attrs)
+              else
+                if content.is_a?(Array) && content.all? { |c| c.is_a?(Hash) && (c[:type] == "tool_result" || c["type"] == "tool_result") }
+                  content.each do |tr|
+                    chat.add_message(role: :tool, content: (tr[:content] || tr["content"]).to_s, tool_call_id: tr[:tool_use_id] || tr["tool_use_id"])
+                  end
+                else
+                  chat.add_message(role: role.to_sym, content: content || "")
+                end
               end
             end
           end
-        end
-      end)
-
-      ::Gemlings::Memory.prepend(Module.new do
-        def to_messages
-          messages = super
-
-          # First pass: strip trailing whitespace from string content
-          messages = messages.map do |msg|
-            msg[:content].is_a?(String) ? msg.merge(content: msg[:content].rstrip) : msg
-          end
-
-          # Second pass: rewrite tool observation messages into proper tool_result blocks.
-          # Anthropic requires that every tool_use in an assistant message is immediately
-          # followed by a user message containing tool_result blocks (not plain text).
-          result = []
-          messages.each_with_index do |msg, i|
-            prev = result.last
-            # If previous assistant message had tool_calls and this is an "Observation:" message,
-            # rewrite as structured tool_result blocks
-            if prev && prev[:role] == "assistant" && prev[:tool_calls].present? &&
-               msg[:role] == "user" && msg[:content].is_a?(String) && msg[:content].start_with?("Observation:")
-              tool_calls = prev[:tool_calls]
-              observation = msg[:content].sub(/\AObservation:\s*/, "").strip
-              # Build one tool_result per tool_call, using the full observation for each
-              # (for single-tool steps this is exact; for multi-tool it's a shared approximation)
-              tool_results = tool_calls.map do |tc|
-                { type: "tool_result", tool_use_id: tc.id, content: observation }
-              end
-              result << msg.merge(content: tool_results)
-            else
-              result << msg
-            end
-          end
-
-          result
-        end
-      end)
+        end)
+      end
     end
 
     # Auto-register all Fosm models with the registry after app loads.
