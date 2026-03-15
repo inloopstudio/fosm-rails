@@ -43,6 +43,37 @@ module Fosm
         end
       end
 
+      def users_search
+        q         = params[:q].to_s.strip
+        user_type = params[:user_type].presence || "User"
+        results   = []
+
+        begin
+          klass = user_type.constantize
+          scope = klass.all
+
+          if q.present?
+            searchable = klass.column_names & %w[email name]
+            if searchable.any?
+              conditions = searchable.map { |col| "lower(#{col}) LIKE :q" }.join(" OR ")
+              scope = scope.where(conditions, q: "%#{q.downcase}%")
+            end
+          end
+
+          results = scope.limit(10).map do |user|
+            label = [
+              (user.name if user.respond_to?(:name) && user.name.present?),
+              (user.email if user.respond_to?(:email))
+            ].compact.join(" — ")
+            { id: user.id.to_s, label: label }
+          end
+        rescue NameError
+          # unknown user_type — return empty
+        end
+
+        render json: results
+      end
+
       def destroy
         @assignment = Fosm::RoleAssignment.find(params[:id])
 

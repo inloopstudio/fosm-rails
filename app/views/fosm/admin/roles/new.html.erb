@@ -26,23 +26,101 @@
         </div>
       <% end %>
 
-      <div class="grid grid-cols-2 gap-4">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">User Type</label>
-          <%= f.text_field :user_type,
-              placeholder: "User",
-              class: "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" %>
-          <p class="text-xs text-gray-400 mt-1">ActiveRecord class name, e.g. "User"</p>
-        </div>
+      <%# Hidden fields — populated by the autocomplete below %>
+      <%= f.hidden_field :user_type, value: "User", id: "role_assignment_user_type" %>
+      <%= f.hidden_field :user_id,   value: "",      id: "role_assignment_user_id" %>
 
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">User ID</label>
-          <%= f.text_field :user_id,
-              placeholder: "42",
-              class: "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" %>
-          <p class="text-xs text-gray-400 mt-1">The user's primary key</p>
-        </div>
+      <div id="user-autocomplete" class="relative">
+        <label class="block text-sm font-medium text-gray-700 mb-1">User</label>
+        <input
+          id="user-search-input"
+          type="text"
+          placeholder="Search by name or email…"
+          autocomplete="off"
+          class="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+        <div
+          id="user-search-dropdown"
+          class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded shadow-lg hidden text-sm"
+        ></div>
+        <p class="text-xs text-gray-400 mt-1" id="user-search-hint">Type at least 2 characters to search</p>
       </div>
+
+      <script>
+        (function() {
+          var searchInput    = document.getElementById('user-search-input');
+          var dropdown       = document.getElementById('user-search-dropdown');
+          var hiddenId       = document.getElementById('role_assignment_user_id');
+          var hiddenType     = document.getElementById('role_assignment_user_type');
+          var hint           = document.getElementById('user-search-hint');
+          var searchUrl      = "<%= fosm.users_search_admin_roles_path %>";
+          var debounceTimer  = null;
+
+          function showDropdown(items) {
+            dropdown.innerHTML = '';
+            if (!items.length) {
+              dropdown.innerHTML = '<div class="px-3 py-2 text-gray-400">No users found</div>';
+            } else {
+              items.forEach(function(item) {
+                var el = document.createElement('div');
+                el.className = 'px-3 py-2 cursor-pointer hover:bg-blue-50';
+                el.textContent = item.label;
+                el.addEventListener('mousedown', function(e) {
+                  e.preventDefault();
+                  selectUser(item);
+                });
+                dropdown.appendChild(el);
+              });
+            }
+            dropdown.classList.remove('hidden');
+          }
+
+          function selectUser(item) {
+            hiddenId.value      = item.id;
+            searchInput.value   = item.label;
+            hint.textContent    = 'Selected: ' + item.label;
+            hint.classList.add('text-green-600');
+            hint.classList.remove('text-gray-400');
+            dropdown.classList.add('hidden');
+          }
+
+          function clearSelection() {
+            hiddenId.value = '';
+            hint.textContent = 'Type at least 2 characters to search';
+            hint.classList.remove('text-green-600');
+            hint.classList.add('text-gray-400');
+          }
+
+          searchInput.addEventListener('input', function() {
+            var q = searchInput.value.trim();
+            clearSelection();
+            clearTimeout(debounceTimer);
+
+            if (q.length < 2) {
+              dropdown.classList.add('hidden');
+              return;
+            }
+
+            debounceTimer = setTimeout(function() {
+              var url = searchUrl + '?q=' + encodeURIComponent(q) + '&user_type=' + encodeURIComponent(hiddenType.value);
+              fetch(url, { headers: { 'Accept': 'application/json' } })
+                .then(function(r) { return r.json(); })
+                .then(function(data) { showDropdown(data); })
+                .catch(function() { dropdown.classList.add('hidden'); });
+            }, 250);
+          });
+
+          searchInput.addEventListener('blur', function() {
+            setTimeout(function() { dropdown.classList.add('hidden'); }, 150);
+          });
+
+          searchInput.addEventListener('focus', function() {
+            if (dropdown.children.length > 0 && hiddenId.value === '') {
+              dropdown.classList.remove('hidden');
+            }
+          });
+        })();
+      </script>
 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Resource Type</label>

@@ -12,7 +12,11 @@ Fosm::Engine.routes.draw do
     end
     resources :transitions, only: [:index]
     resources :webhooks,    only: [:index, :new, :create, :destroy]
-    resources :roles,       only: [:index, :new, :create, :destroy]
+    resources :roles, only: [:index, :new, :create, :destroy] do
+      collection do
+        get :users_search
+      end
+    end
     resource  :settings,    only: [:show]
   end
 end
