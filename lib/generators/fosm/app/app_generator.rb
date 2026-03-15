@@ -41,6 +41,38 @@ module Fosm
         migration_template "migration.rb.tt", "db/migrate/create_fosm_#{table_name}.rb"
       end
 
+      def inject_agent_instructions
+        claude_md = ::Rails.root.join("CLAUDE.md")
+        sentinel  = "<!-- fosm:agent-instructions -->"
+
+        if File.exist?(claude_md) && File.read(claude_md).include?(sentinel)
+          say_status :skip, "CLAUDE.md already has FOSM agent instructions", :yellow
+          return
+        end
+
+        gem_root = Fosm::Engine.root.to_s
+        agents_md_path = File.join(gem_root, "AGENTS.md")
+
+        section = <<~MARKDOWN
+
+          #{sentinel}
+          ## FOSM (fosm-rails)
+
+          This project uses `fosm-rails` — a Finite Object State Machine engine.
+          When the user asks to build, extend, or modify features involving state machines,
+          lifecycles, FOSM, or any code under `app/models/fosm/`, `app/controllers/fosm/`,
+          or `app/agents/fosm/`, you **must** read and follow the instructions in:
+
+          `#{agents_md_path}`
+        MARKDOWN
+
+        if File.exist?(claude_md)
+          append_to_file claude_md, section
+        else
+          create_file claude_md, section.lstrip
+        end
+      end
+
       def update_routes
         routes_file = ::Rails.root.join("config/routes/fosm.rb")
 

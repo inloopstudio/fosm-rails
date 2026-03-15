@@ -37,7 +37,7 @@
 #
 #     bash /path/to/fosm-rails/util/setup_and_test.sh /path/to/my-test-app
 #
-# WHAT THE SCRIPT DOES (6 steps)
+# WHAT THE SCRIPT DOES (7 steps)
 #   [0] bundle add fosm-rails --path <gem-source>   (adds gem to Gemfile)
 #   [1] bundle install
 #   [2] rails db:create                             (skips if DB already exists)
@@ -45,6 +45,7 @@
 #   [4] rails fosm:install:migrations + db:migrate  (creates FOSM tables)
 #   [5] Injects engine mount into routes.rb and writes config/initializers/fosm.rb
 #   [6] Replaces the lifecycle stub with a complete Invoice lifecycle
+#   [7] Injects FOSM agent instructions into CLAUDE.md
 #
 # AFTER SETUP — start the server and verify:
 #
@@ -159,6 +160,32 @@ with open(f, 'w') as fp:
     fp.write(content)
 print("  lifecycle added to app/models/fosm/invoice.rb")
 PYTHON
+
+echo ""
+echo "[7/7] Injecting FOSM agent instructions into CLAUDE.md..."
+
+SENTINEL="<!-- fosm:agent-instructions -->"
+CLAUDE_MD="$APP_DIR/CLAUDE.md"
+GEM_PATH=$(cd "$FOSM_GEM_PATH" && pwd)
+AGENTS_MD="$GEM_PATH/AGENTS.md"
+
+if [ -f "$CLAUDE_MD" ] && grep -q "$SENTINEL" "$CLAUDE_MD"; then
+  echo "  CLAUDE.md already has FOSM agent instructions (skipped)"
+else
+  cat >> "$CLAUDE_MD" << FOSM_INSTRUCTIONS
+
+$SENTINEL
+## FOSM (fosm-rails)
+
+This project uses \`fosm-rails\` — a Finite Object State Machine engine.
+When the user asks to build, extend, or modify features involving state machines,
+lifecycles, FOSM, or any code under \`app/models/fosm/\`, \`app/controllers/fosm/\`,
+or \`app/agents/fosm/\`, you **must** read and follow the instructions in:
+
+\`$AGENTS_MD\`
+FOSM_INSTRUCTIONS
+  echo "  CLAUDE.md updated with FOSM agent instructions"
+fi
 
 echo ""
 echo "=== Setup complete! ==="
