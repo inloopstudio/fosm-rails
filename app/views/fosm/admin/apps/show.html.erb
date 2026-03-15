@@ -73,6 +73,101 @@
     </table>
   </div>
 
+  <!-- Access control matrix (only shown when an access block is declared) -->
+  <% if @lifecycle.access_defined? %>
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-semibold text-gray-900">Access Control</h2>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-gray-400 bg-gray-50 border border-gray-100 px-2 py-1 rounded">
+            read-only &mdash; defined in model
+          </span>
+          <%= link_to "Manage Role Assignments →",
+              fosm.admin_roles_path,
+              class: "text-xs text-blue-600 hover:underline" %>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mb-4">
+        Role-based permissions as declared in the lifecycle <code>access</code> block.
+        RBAC is <strong>active</strong> for this app — deny-by-default, superadmin bypasses all checks.
+      </p>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-gray-500 text-xs uppercase border-b">
+            <tr>
+              <th class="pb-2 text-left w-28">Role</th>
+              <th class="pb-2 text-center">Create</th>
+              <th class="pb-2 text-center">Read</th>
+              <th class="pb-2 text-center">Update</th>
+              <th class="pb-2 text-center">Delete</th>
+              <% @lifecycle.events.each do |event| %>
+                <th class="pb-2 text-center text-purple-700"><%= event.name %></th>
+              <% end %>
+              <th class="pb-2 text-center">Default</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-50">
+            <% @lifecycle.access_definition.roles.each do |role| %>
+              <tr>
+                <td class="py-2">
+                  <span class="font-mono text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">:<%= role.name %></span>
+                </td>
+                <% [:create, :read, :update, :delete].each do |action| %>
+                  <td class="py-2 text-center">
+                    <% if role.can_crud?(action) %>
+                      <span class="text-green-600 font-bold">&#10003;</span>
+                    <% else %>
+                      <span class="text-gray-300">&mdash;</span>
+                    <% end %>
+                  </td>
+                <% end %>
+                <% @lifecycle.events.each do |event| %>
+                  <td class="py-2 text-center">
+                    <% if role.can_event?(event.name) %>
+                      <span class="text-purple-600 font-bold">&#10003;</span>
+                    <% else %>
+                      <span class="text-gray-300">&mdash;</span>
+                    <% end %>
+                  </td>
+                <% end %>
+                <td class="py-2 text-center">
+                  <% if @lifecycle.access_definition.default_role == role.name %>
+                    <span class="text-xs text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">auto</span>
+                  <% else %>
+                    <span class="text-gray-300">&mdash;</span>
+                  <% end %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <% if @lifecycle.access_definition.default_role %>
+        <p class="text-xs text-gray-400 mt-3">
+          &#x2139;&nbsp;Role <span class="font-mono">:<%= @lifecycle.access_definition.default_role %></span>
+          is auto-assigned to the <code>created_by</code> user when a new record is created.
+        </p>
+      <% end %>
+
+      <!-- Active role assignment count for this app -->
+      <% assignment_count = Fosm::RoleAssignment.for_resource_type(@model_class).count %>
+      <p class="text-xs text-gray-400 mt-1">
+        &#x2139;&nbsp;<%= assignment_count %> active role assignment<%= assignment_count == 1 ? "" : "s" %>
+        for this app.
+        <%= link_to "View all →", fosm.admin_roles_path, class: "text-blue-500 hover:underline" %>
+      </p>
+    </div>
+  <% else %>
+    <div class="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-4">
+      <p class="text-sm text-gray-500">
+        <strong>Access Control:</strong> open-by-default &mdash; no <code>access</code> block declared in the lifecycle.
+        All authenticated actors have full access. Add an <code>access do ... end</code> block to enable RBAC.
+      </p>
+    </div>
+  <% end %>
+
   <!-- Recent transitions -->
   <div class="bg-white border border-gray-200 rounded-lg p-5">
     <h2 class="font-semibold text-gray-900 mb-4">Recent Transitions</h2>

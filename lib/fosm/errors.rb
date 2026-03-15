@@ -28,4 +28,25 @@ module Fosm
       super("#{record_class.name} is in terminal state '#{state_name}' and cannot transition further")
     end
   end
+
+  # Raised when an actor attempts an action they don't have a role for.
+  # Applies to both lifecycle events (fire!) and CRUD operations (fosm_authorize!).
+  class AccessDenied < Error
+    attr_reader :action, :actor
+
+    def initialize(action, actor = nil)
+      @action = action
+      @actor  = actor
+      label   = actor_label(actor)
+      super("Access denied: '#{label}' does not have a role that permits '#{action}'")
+    end
+
+    private
+
+    def actor_label(actor)
+      return "anonymous" if actor.nil?
+      return actor.to_s   if actor.is_a?(Symbol)
+      actor.respond_to?(:email) ? actor.email : "#{actor.class.name}##{actor.try(:id)}"
+    end
+  end
 end

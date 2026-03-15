@@ -2,19 +2,21 @@ require_relative "state_definition"
 require_relative "event_definition"
 require_relative "guard_definition"
 require_relative "side_effect_definition"
+require_relative "access_definition"
 
 module Fosm
   module Lifecycle
     # Holds the entire lifecycle definition for a FOSM model.
     # Instantiated once per model class at class load time.
     class Definition
-      attr_reader :states, :events
+      attr_reader :states, :events, :access_definition
 
       def initialize
-        @states = []
-        @events = []
-        @pending_guards = {}       # event_name => [GuardDefinition, ...]
+        @states            = []
+        @events            = []
+        @pending_guards    = {}   # event_name => [GuardDefinition, ...]
         @pending_side_effects = {} # event_name => [SideEffectDefinition, ...]
+        @access_definition = nil  # nil = open-by-default; set when access{} is declared
       end
 
       # DSL: declare a state
@@ -48,6 +50,42 @@ module Fosm
           @pending_guards[on.to_sym] ||= []
           @pending_guards[on.to_sym] << guard_def
         end
+      end
+
+      # DSL: declare the access control block for this lifecycle.
+      #
+      # Activates RBAC for this object. Without this block, all authenticated
+      # actors have full access (open-by-default — backwards-compatible).
+      #
+      # Once declared, deny-by-default: only granted capabilities work.
+      # Superadmin and :system/:agent symbol actors always bypass checks.
+      #
+      # Example:
+      #
+      #   access do
+      #     role :owner, default: true do
+      #       can :crud
+      #       can :send_invoice, :cancel
+      #     end
+      #
+      #     role :approver do
+      #       can :read
+      #       can :pay
+      #     end
+      #
+      #     role :viewer do
+      #       can :read
+      #     end
+      #   end
+      def access(&block)
+        @access_definition = AccessDefinition.new
+        @access_definition.instance_eval(&block)
+        @access_definition
+      end
+
+      # Returns true if an access block was declared (RBAC is active)
+      def access_defined?
+        @access_definition.present?
       end
 
       # DSL: declare a side effect on an event

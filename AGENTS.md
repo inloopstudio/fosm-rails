@@ -128,7 +128,15 @@ The admin explorer renders the lifecycle definition directly from the Ruby code 
 
 The `Fosm::Agent` base class generates exactly one Gemlings tool per lifecycle event. The tool calls `fire!` which enforces the machine rules. The AI cannot fire an event that doesn't exist. The AI cannot bypass a guard. The AI cannot modify state directly.
 
+**RBAC adds a third boundary**: if the model has an `access` block, the agent tool inherits the actor's permissions. An agent running as `actor: current_user` cannot fire events the actor doesn't have a role for. The machine refusal and the permission refusal happen at the same layer — inside `fire!`.
+
 When adding new agent capabilities, add new **lifecycle events** (which automatically generate new agent tools), not new raw database tools.
+
+### 7. Access control lives in the lifecycle definition
+
+Role declarations belong in the same block as states and events — not in a separate policy file, config YAML, or initializer. The lifecycle block IS the specification for what the object is, what it can do, and who can do what to it.
+
+**Do not** introduce a separate authorization mechanism (e.g., Pundit policies, CanCanCan abilities) for FOSM-managed events. Use the `access` block. This keeps the specification co-located and removes the possibility of drift between what the machine allows and what the authorization layer allows.
 
 ---
 
@@ -139,15 +147,19 @@ lib/
   fosm/
     lifecycle.rb                  ← ActiveSupport::Concern — the main DSL mixin
     lifecycle/
-      definition.rb               ← Holds states/events/guards/side_effects for one model
+      definition.rb               ← Holds states/events/guards/side_effects/access for one model
       state_definition.rb         ← Value object: name, initial?, terminal?
       event_definition.rb         ← Value object: name, from_states, to_state, guards, side_effects
       guard_definition.rb         ← Named callable: (record) → bool
       side_effect_definition.rb   ← Named callable: (record, transition) → void
+      access_definition.rb        ← access{} block: roles, default_role, permission lookups
+      role_definition.rb          ← Individual role: CRUD permissions + event permissions
+    current.rb                    ← Per-request RBAC cache (ActiveSupport::CurrentAttributes)
+    transition_buffer.rb          ← :buffered log strategy — thread-safe queue + bulk INSERT
     agent.rb                      ← Base class: model_class DSL + Gemlings tool generation
-    configuration.rb              ← Fosm.configure { } block
+    configuration.rb              ← Fosm.configure { } block (incl. transition_log_strategy)
     registry.rb                   ← Global slug → model_class map
-    errors.rb                     ← Fosm::InvalidTransition, GuardFailed, etc.
+    errors.rb                     ← Fosm::InvalidTransition, GuardFailed, AccessDenied, etc.
     engine.rb                     ← Rails::Engine, migration hooks, auto-registration
   fosm-rails.rb                   ← Entry point
 
@@ -155,16 +167,21 @@ app/
   models/fosm/
     transition_log.rb             ← Immutable audit trail (shared across all FOSM apps)
     webhook_subscription.rb       ← Admin-configured HTTP callbacks
+    role_assignment.rb            ← Actor → role → resource (type-level or record-level)
+    access_event.rb               ← Immutable RBAC audit log (grants/revokes)
   controllers/fosm/
-    application_controller.rb     ← Inherits from configured base_controller
+    application_controller.rb     ← Inherits from base_controller; provides fosm_authorize!
     admin/
       base_controller.rb          ← Admin auth before_action
       dashboard_controller.rb
-      apps_controller.rb
+      apps_controller.rb          ← Renders access control matrix on app detail page
+      roles_controller.rb         ← Grant/revoke roles; superadmin only
       transitions_controller.rb
       webhooks_controller.rb
   jobs/fosm/
     webhook_delivery_job.rb       ← Async HTTP POST with HMAC signing, retries
+    transition_log_job.rb         ← Async transition log write (:async strategy)
+    access_event_job.rb           ← Async RBAC audit log write
 
 lib/generators/fosm/app/
   app_generator.rb                ← rails generate fosm:app
@@ -181,6 +198,8 @@ lib/generators/fosm/app/
 
 ## How `fire!` works
 
+With the RBAC and async audit trail additions, `fire!` now follows this sequence:
+
 ```
 record.fire!(:send_invoice, actor: current_user)
 
@@ -189,16 +208,45 @@ record.fire!(:send_invoice, actor: current_user)
 3. Check: is current state terminal? → raise TerminalState if yes
 4. Check: is the event valid from current state? → raise InvalidTransition if not
 5. Run guards: each guard.call(record) → raise GuardFailed if any return false
-6. Begin database transaction:
+6. RBAC check (if access block declared):
+   a. Bypass if actor is nil, Symbol, or superadmin
+   b. Load actor's roles from per-request cache (one SQL query total, then O(1))
+   c. Check if any actor role permits this event → raise AccessDenied if not
+7. Begin database transaction:
    a. UPDATE record SET state = 'sent'
-   b. INSERT INTO fosm_transition_logs (...)
+   b. [if strategy == :sync] INSERT INTO fosm_transition_logs (...)
    c. Run each side_effect.call(record, transition_data)
    d. COMMIT (or ROLLBACK if any step raises)
-7. Enqueue WebhookDeliveryJob asynchronously (outside transaction)
-8. Return true
+8. [if strategy == :async]    Enqueue TransitionLogJob (non-blocking)
+   [if strategy == :buffered] Push to TransitionBuffer (flushed every ~1s)
+9. Enqueue WebhookDeliveryJob asynchronously (always, outside transaction)
+10. Return true
 ```
 
-The transaction ensures that if a side effect raises, the state update is rolled back. The webhook job fires outside the transaction so it doesn't delay the response and doesn't roll back if the HTTP call fails.
+**Total blocking SQL operations: 1** (the UPDATE). Everything else is either in-memory, cached, or async. The RBAC check at step 6 is O(1) after the first check per actor per request.
+
+### Transition log strategies
+
+| Strategy | Latency | Consistency | When to use |
+|---|---|---|---|
+| `:sync` | +1ms | Strict — log always matches state | Compliance requirements, testing |
+| `:async` | ~0ms | Near-real-time (ms delay via SolidQueue) | Production default |
+| `:buffered` | ~0ms | Up to 1s delay; data loss on crash | Very high throughput (1000+ fire!/sec) |
+
+Configure in `config/initializers/fosm.rb`:
+```ruby
+config.transition_log_strategy = :async  # recommended
+```
+
+### RBAC access model
+
+The access control design draws from three traditions:
+
+- **Linux/POSIX**: permissions live ON the object (in the lifecycle block, not a separate file), deny-by-default once declared, root/superadmin always bypasses
+- **SAP authorization**: separation of duties (the :owner who sends an invoice cannot be the :approver who pays it), activity granularity (CRUD actions + individual events), audit trail for every access change
+- **Rails/DHH**: convention-over-configuration (no `access` block = open by default), rules readable as English in the model file, one query per request via `CurrentAttributes` cache
+
+The `Fosm::Current` cache loads ALL role assignments for the current actor in one SQL query on first access, keyed by `"ClassName:id"`. Subsequent RBAC checks in the same request (across multiple records or events) hit the in-memory hash only. The cache resets automatically at the end of each request.
 
 ---
 

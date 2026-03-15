@@ -24,13 +24,24 @@ module Fosm
     # Default layout used for generated FOSM app views
     attr_accessor :app_layout
 
+    # Strategy for writing transition logs.
+    #
+    # :sync     — INSERT inside the fire! transaction (strictest consistency, default)
+    # :async    — SolidQueue/ActiveJob after commit (non-blocking, recommended for production)
+    # :buffered — Bulk INSERT via periodic thread flush (highest throughput, opt-in)
+    #
+    # Example:
+    #   config.transition_log_strategy = :async
+    attr_accessor :transition_log_strategy
+
     def initialize
-      @base_controller = "ApplicationController"
-      @admin_authorize = -> { true } # Override in initializer!
-      @app_authorize = ->(_level) { true } # Override in initializer!
-      @current_user_method = -> { defined?(current_user) ? current_user : nil }
-      @admin_layout = "fosm/application"
-      @app_layout = "application"
+      @base_controller          = "ApplicationController"
+      @admin_authorize          = -> { true } # Override in initializer!
+      @app_authorize            = ->(_level) { true } # Override in initializer!
+      @current_user_method      = -> { defined?(current_user) ? current_user : nil }
+      @admin_layout             = "fosm/application"
+      @app_layout               = "application"
+      @transition_log_strategy  = :sync
     end
   end
 

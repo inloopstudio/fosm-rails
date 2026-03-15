@@ -128,6 +128,12 @@ module Fosm
         slug = klass.name.demodulize.underscore.dasherize
         Fosm::Registry.register(klass, slug: slug)
       end
+
+      # Start the background flusher thread for the :buffered log strategy.
+      # Only starts in long-running server processes (not in test/rake/console tasks).
+      if Fosm.config.transition_log_strategy == :buffered && !::Rails.env.test?
+        Fosm::TransitionBuffer.start_flusher!
+      end
     end
   end
 end

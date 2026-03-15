@@ -19,5 +19,37 @@ module Fosm
     def fosm_current_user
       instance_exec(&Fosm.config.current_user_method)
     end
+
+    # Check CRUD permissions for the current actor.
+    # Raises Fosm::AccessDenied if the actor lacks the required role.
+    # No-ops if the lifecycle has no access block declared (open-by-default).
+    #
+    # @param action  [Symbol] :create, :read, :update, or :delete
+    # @param subject [ActiveRecord::Base, Class] a record or model class
+    #
+    # Example usage in generated controllers:
+    #   before_action -> { fosm_authorize!(:read,   Fosm::Invoice) }, only: [:index, :show]
+    #   before_action -> { fosm_authorize!(:create, Fosm::Invoice) }, only: [:new, :create]
+    #   before_action -> { fosm_authorize!(:update, @record) },       only: [:edit, :update]
+    #   before_action -> { fosm_authorize!(:delete, @record) },       only: [:destroy]
+    def fosm_authorize!(action, subject)
+      model_class = subject.is_a?(Class) ? subject : subject.class
+      lifecycle   = model_class.try(:fosm_lifecycle)
+      return unless lifecycle&.access_defined?
+
+      actor = fosm_current_user
+      # Bypass for superadmin and nil/symbol actors (mirrors fire! logic)
+      return if actor.nil?
+      return if actor.is_a?(Symbol)
+      return if actor.respond_to?(:superadmin?) && actor.superadmin?
+
+      record_id       = subject.is_a?(ActiveRecord::Base) ? subject.id : nil
+      actor_roles     = Fosm::Current.roles_for(actor, model_class, record_id)
+      permitted_roles = lifecycle.access_definition.roles_for_crud(action)
+
+      unless (actor_roles & permitted_roles).any?
+        raise Fosm::AccessDenied.new(action, actor)
+      end
+    end
   end
 end

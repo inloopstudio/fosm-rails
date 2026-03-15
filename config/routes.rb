@@ -11,7 +11,8 @@ Fosm::Engine.routes.draw do
       end
     end
     resources :transitions, only: [:index]
-    resources :webhooks, only: [:index, :new, :create, :destroy]
-    resource  :settings,  only: [:show]
+    resources :webhooks,    only: [:index, :new, :create, :destroy]
+    resources :roles,       only: [:index, :new, :create, :destroy]
+    resource  :settings,    only: [:show]
   end
 end

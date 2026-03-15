@@ -1,0 +1,139 @@
+<div class="p-6 space-y-8">
+  <div class="flex items-center gap-3">
+    <%= link_to "← FOSM Admin", fosm.admin_root_path, class: "text-sm text-blue-600 hover:underline" %>
+  </div>
+
+  <div class="flex items-start justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Role Assignments</h1>
+      <p class="text-sm text-gray-500 mt-1">
+        Manage which actors hold which roles on FOSM resources.
+        <%= @assignments.count %> active assignment<%= @assignments.count == 1 ? "" : "s" %>.
+      </p>
+    </div>
+    <%= link_to "+ Grant Role", fosm.new_admin_role_path,
+        class: "text-sm bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-700 shrink-0" %>
+  </div>
+
+  <% if @apps.any? { |_, klass| klass.fosm_lifecycle&.access_defined? } %>
+    <!-- Role declarations summary per app -->
+    <div class="bg-white border border-gray-200 rounded-lg p-5">
+      <h2 class="font-semibold text-gray-900 mb-3">Declared Roles (from lifecycle definitions)</h2>
+      <p class="text-xs text-gray-400 mb-4">Read-only — role definitions come from the model's <code>access</code> block.</p>
+      <div class="space-y-4">
+        <% @apps.each do |slug, klass| %>
+          <% next unless klass.fosm_lifecycle&.access_defined? %>
+          <div>
+            <div class="text-sm font-medium text-gray-700 mb-1"><%= klass.name.demodulize %></div>
+            <div class="flex flex-wrap gap-2">
+              <% klass.fosm_lifecycle.access_definition.roles.each do |role| %>
+                <span class="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full">
+                  :<%= role.name %>
+                  <% if klass.fosm_lifecycle.access_definition.default_role == role.name %>
+                    <span class="text-indigo-400">(default)</span>
+                  <% end %>
+                </span>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
+  <!-- Active assignments -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <h2 class="font-semibold text-gray-900 mb-4">Active Assignments</h2>
+    <% if @assignments.any? %>
+      <table class="w-full text-sm">
+        <thead class="text-gray-500 text-xs uppercase border-b">
+          <tr>
+            <th class="pb-2 text-left">Actor</th>
+            <th class="pb-2 text-left">Role</th>
+            <th class="pb-2 text-left">Scope</th>
+            <th class="pb-2 text-left">Type</th>
+            <th class="pb-2 text-left">Granted</th>
+            <th class="pb-2 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          <% @assignments.each do |ra| %>
+            <tr>
+              <td class="py-2 text-gray-900">
+                <div class="font-medium"><%= ra.actor_label %></div>
+                <div class="text-xs text-gray-400"><%= ra.user_type %></div>
+              </td>
+              <td class="py-2">
+                <span class="inline-block text-xs font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">
+                  :<%= ra.role_name %>
+                </span>
+              </td>
+              <td class="py-2 text-gray-600 text-xs"><%= ra.scope_label %></td>
+              <td class="py-2">
+                <% if ra.type_level? %>
+                  <span class="text-xs text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded">type-level</span>
+                <% else %>
+                  <span class="text-xs text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">record-level</span>
+                <% end %>
+              </td>
+              <td class="py-2 text-gray-400 text-xs"><%= ra.created_at.strftime("%b %d, %Y") %></td>
+              <td class="py-2 text-right">
+                <%= button_to "Revoke",
+                    fosm.admin_role_path(ra),
+                    method: :delete,
+                    class: "text-xs text-red-600 hover:underline bg-transparent border-0 p-0 cursor-pointer",
+                    data: { confirm: "Revoke :#{ra.role_name} from #{ra.actor_label}?" } %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% else %>
+      <p class="text-sm text-gray-400">No role assignments yet. Grant a role to get started.</p>
+    <% end %>
+  </div>
+
+  <!-- Recent access events (audit trail) -->
+  <div class="bg-white border border-gray-200 rounded-lg p-5">
+    <h2 class="font-semibold text-gray-900 mb-4">Recent Access Events</h2>
+    <p class="text-xs text-gray-400 mb-4">Immutable audit log of role grants and revocations.</p>
+    <% if @access_events.any? %>
+      <table class="w-full text-sm">
+        <thead class="text-gray-500 text-xs uppercase border-b">
+          <tr>
+            <th class="pb-2 text-left">Action</th>
+            <th class="pb-2 text-left">Actor</th>
+            <th class="pb-2 text-left">Role</th>
+            <th class="pb-2 text-left">Resource</th>
+            <th class="pb-2 text-left">Performed by</th>
+            <th class="pb-2 text-left">When</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          <% @access_events.each do |ae| %>
+            <tr>
+              <td class="py-2">
+                <% color = ae.grant? || ae.auto_grant? ? "text-green-700 bg-green-50 border-green-100" : "text-red-700 bg-red-50 border-red-100" %>
+                <span class="text-xs border px-1.5 py-0.5 rounded <%= color %>"><%= ae.action %></span>
+              </td>
+              <td class="py-2 text-gray-700 text-xs">
+                <%= ae.user_label.presence || "#{ae.user_type}##{ae.user_id}" %>
+              </td>
+              <td class="py-2">
+                <span class="text-xs font-mono text-indigo-700">:<%= ae.role_name %></span>
+              </td>
+              <td class="py-2 text-gray-500 text-xs">
+                <%= ae.resource_type.demodulize %>
+                <%= ae.resource_id.present? ? "##{ae.resource_id}" : "(all)" %>
+              </td>
+              <td class="py-2 text-gray-400 text-xs"><%= ae.performed_by_label.presence || ae.performed_by_type || "—" %></td>
+              <td class="py-2 text-gray-400 text-xs"><%= ae.created_at.strftime("%b %d %H:%M") %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    <% else %>
+      <p class="text-sm text-gray-400">No access events recorded yet.</p>
+    <% end %>
+  </div>
+</div>
