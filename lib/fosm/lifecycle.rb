@@ -132,7 +132,7 @@ module Fosm
         event_def.side_effects.reject(&:deferred?).each do |side_effect_def|
           side_effect_def.call(self, transition_data)
         end
-        
+
         # 🆕 Queue deferred side effects to run after commit
         deferred_effects = event_def.side_effects.select(&:deferred?)
         if deferred_effects.any?
@@ -373,9 +373,9 @@ module Fosm
     # This prevents SQLite locking when cross-machine triggers occur
     def _fosm_run_deferred_side_effects
       return unless defined?(@_fosm_deferred_side_effects) && @_fosm_deferred_side_effects
-      
+
       transition_data = @_fosm_transition_data
-      
+
       @_fosm_deferred_side_effects.each do |side_effect_def|
         begin
           side_effect_def.call(self, transition_data)
@@ -386,11 +386,11 @@ module Fosm
           logger.error("[Fosm] Deferred side effect '#{side_effect_def.name}' failed: #{e.message}")
         end
       end
-      
+
       # Clean up instance variables
       @_fosm_deferred_side_effects = nil
       @_fosm_transition_data = nil
-      
+
       # Remove the after_commit callback to avoid running on subsequent updates
       self.class.skip_callback(:commit, :after, :_fosm_run_deferred_side_effects, on: :update, raise: false)
     end

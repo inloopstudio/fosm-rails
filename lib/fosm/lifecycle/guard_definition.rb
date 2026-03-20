@@ -19,18 +19,18 @@ module Fosm
 
         case result
         when true
-          [true, nil]
+          [ true, nil ]
         when false
-          [false, nil]
+          [ false, nil ]
         when String
           # String is treated as failure reason
-          [false, result]
+          [ false, result ]
         when Array
-          result[0] == :fail ? [false, result[1]] : [true, nil]
+          result[0] == :fail ? [ false, result[1] ] : [ true, nil ]
         else
           # 🆕 Any other truthy value is treated as passing
           # Only false/nil fails; everything else passes
-          result ? [true, nil] : [false, nil]
+          result ? [ true, nil ] : [ false, nil ]
         end
       end
     end
