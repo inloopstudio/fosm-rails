@@ -13,6 +13,9 @@ class FosmGraphTaskTest < ActiveSupport::TestCase
     @rake = Rake::Application.new
     Rake.application = @rake
 
+    # Define the environment task for testing
+    @rake.define_task(Rake::Task, :environment)
+
     # Load the rake task
     load File.expand_path("../../../lib/tasks/fosm_graph.rake", __FILE__)
 

@@ -24,6 +24,10 @@ module Fosm
       def slugs
         @registered.keys
       end
+
+      def each(&block)
+        @registered.each(&block)
+      end
     end
   end
 end
