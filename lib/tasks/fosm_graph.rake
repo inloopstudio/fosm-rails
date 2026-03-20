@@ -19,12 +19,12 @@ namespace :fosm do
       # Generate machine-level graph
       machine_data = {
         machine: model_class.name,
-        states: lifecycle.states.map { |s| 
-          { 
-            name: s.name, 
-            initial: s.initial?, 
-            terminal: s.terminal? 
-          } 
+        states: lifecycle.states.map { |s|
+          {
+            name: s.name,
+            initial: s.initial?,
+            terminal: s.terminal?
+          }
         },
         events: lifecycle.events.map { |e|
           {
@@ -46,7 +46,7 @@ namespace :fosm do
           # Convention: trigger_other_machine or activate_contract patterns
           if name.include?("_")
             parts = name.split("_")
-            potential_targets = parts.select { |p| 
+            potential_targets = parts.select { |p|
               # Look for capitalized words that match model names
               p.capitalize == p && Object.const_defined?("Fosm::#{p.capitalize}") rescue false
             }
