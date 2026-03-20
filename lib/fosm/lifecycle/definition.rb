@@ -28,8 +28,10 @@ module Fosm
       end
 
       # DSL: declare an event
-      def event(name, from:, to:)
-        event_def = EventDefinition.new(name: name, from: from, to: to)
+      # 🆕 Options:
+      #   force: true — allow firing from terminal states (compensating events)
+      def event(name, from:, to:, force: false)
+        event_def = EventDefinition.new(name: name, from: from, to: to, force: force)
 
         # Apply any guards/side_effects declared before this event (unusual but handle it)
         (@pending_guards[name.to_sym] || []).each { |g| event_def.add_guard(g) }
@@ -89,8 +91,16 @@ module Fosm
       end
 
       # DSL: declare a side effect on an event
-      def side_effect(name, on:, &block)
-        side_effect_def = SideEffectDefinition.new(name: name, &block)
+      # 🆕 Options:
+      #   rescue: :raise (default), :log, :ignore — error handling strategy
+      #   defer: false (default), true — run after transaction commits
+      def side_effect(name, on:, rescue: :raise, defer: false, &block)
+        side_effect_def = SideEffectDefinition.new(
+          name: name,
+          rescue_strategy: binding.local_variable_get(:rescue),
+          defer: defer,
+          &block
+        )
         event_def = find_event(on)
         if event_def
           event_def.add_side_effect(side_effect_def)

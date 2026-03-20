@@ -77,8 +77,8 @@ module Fosm
       current           = self.state.to_s
       current_state_def = lifecycle.find_state(current)
 
-      # Block terminal states from further transitions
-      if current_state_def&.terminal?
+      # Block terminal states from further transitions (unless force: true)
+      if current_state_def&.terminal? && !event_def.force?
         raise Fosm::TerminalState.new(current, self.class)
       end
 
@@ -88,9 +88,11 @@ module Fosm
       end
 
       # Run guards (pure functions — no side effects, evaluated before any writes)
+      # 🆕 Use evaluate for rich error messages
       event_def.guards.each do |guard_def|
-        unless guard_def.call(self)
-          raise Fosm::GuardFailed.new(guard_def.name, event_name)
+        allowed, reason = guard_def.evaluate(self)
+        unless allowed
+          raise Fosm::GuardFailed.new(guard_def.name, event_name, reason)
         end
       end
 
@@ -112,7 +114,10 @@ module Fosm
         "actor_type"  => actor_type_for(actor),
         "actor_id"    => actor_id_for(actor),
         "actor_label" => actor_label_for(actor),
-        "metadata"    => metadata
+        "metadata"    => metadata.merge(
+          # 🆕 Causal chain tracking — when this transition was triggered by another
+          triggered_by: metadata.delete(:triggered_by)
+        ).compact
       }
 
       ActiveRecord::Base.transaction do
@@ -123,9 +128,18 @@ module Fosm
           Fosm::TransitionLog.create!(log_data)
         end
 
-        # Run side effects inside transaction so they roll back on error
-        event_def.side_effects.each do |side_effect_def|
+        # Run immediate side effects inside transaction so they roll back on error
+        event_def.side_effects.reject(&:deferred?).each do |side_effect_def|
           side_effect_def.call(self, transition_data)
+        end
+        
+        # 🆕 Queue deferred side effects to run after commit
+        deferred_effects = event_def.side_effects.select(&:deferred?)
+        if deferred_effects.any?
+          @_fosm_deferred_side_effects = deferred_effects
+          @_fosm_transition_data = transition_data
+          # Use after_commit to run after transaction completes
+          self.class.after_commit :_fosm_run_deferred_side_effects, on: :update
         end
       end
 
@@ -154,16 +168,19 @@ module Fosm
 
     # Returns true if the given event can be fired from the current state.
     # Does NOT check RBAC — use fosm_can_fire_with_actor? for that.
+    # Does NOT consider force: true — that's for exceptional bypass only.
     def can_fire?(event_name)
       lifecycle = self.class.fosm_lifecycle
       return false unless lifecycle
 
       event_def = lifecycle.find_event(event_name)
       return false unless event_def
+      # Terminal states block transitions (force: true bypasses this at fire! level, not here)
       return false if lifecycle.find_state(self.state)&.terminal?
       return false unless event_def.valid_from?(self.state)
 
-      event_def.guards.all? { |guard_def| guard_def.call(self) }
+      # 🆕 Use evaluate to properly check guards (handles rich return values)
+      event_def.guards.all? { |guard_def| guard_def.evaluate(self).first }
     end
 
     # Returns true if the actor has a role permitting this event AND the transition is valid.
@@ -180,8 +197,67 @@ module Fosm
       return [] unless lifecycle
 
       lifecycle.available_events_from(self.state).select { |event_def|
-        event_def.guards.all? { |g| g.call(self) }
+        # 🆕 Use evaluate to properly check guards
+        event_def.guards.all? { |g| g.evaluate(self).first }
       }.map(&:name)
+    end
+
+    # 🆕 Detailed introspection: why can this event (not) be fired?
+    # Returns a hash with diagnostic information for debugging and UI messages.
+    def why_cannot_fire?(event_name)
+      lifecycle = self.class.fosm_lifecycle
+      return { can_fire: false, reason: "No lifecycle defined" } unless lifecycle
+
+      event_def = lifecycle.find_event(event_name)
+      return { can_fire: false, reason: "Unknown event '#{event_name}'" } unless event_def
+
+      current = self.state.to_s
+      current_state_def = lifecycle.find_state(current)
+      result = {
+        can_fire: true,
+        event: event_name.to_s,
+        current_state: current
+      }
+
+      # Check terminal state
+      if current_state_def&.terminal? && !event_def.force?
+        result[:can_fire] = false
+        result[:reason] = "State '#{current}' is terminal (use force: true to override)"
+        result[:is_terminal] = true
+        return result
+      end
+
+      # Check valid from state
+      unless event_def.valid_from?(current)
+        result[:can_fire] = false
+        result[:reason] = "Cannot fire '#{event_name}' from '#{current}' (valid from: #{event_def.from_states.join(', ')})"
+        result[:valid_from_states] = event_def.from_states
+        return result
+      end
+
+      # Evaluate guards
+      failed_guards = []
+      passed_guards = []
+
+      event_def.guards.each do |guard_def|
+        allowed, reason = guard_def.evaluate(self)
+        if allowed
+          passed_guards << guard_def.name
+        else
+          failed_guards << { name: guard_def.name, reason: reason }
+        end
+      end
+
+      if failed_guards.any?
+        result[:can_fire] = false
+        result[:failed_guards] = failed_guards
+        result[:passed_guards] = passed_guards
+        first_failure = failed_guards.first
+        result[:reason] = "Guard '#{first_failure[:name]}' failed"
+        result[:reason] += ": #{first_failure[:reason]}" if first_failure[:reason]
+      end
+
+      result
     end
 
     # Returns the current state as a symbol
@@ -291,6 +367,32 @@ module Fosm
       return actor.to_s if actor.is_a?(Symbol)
       return nil unless actor
       actor.respond_to?(:email) ? actor.email : actor.to_s
+    end
+
+    # 🆕 Run deferred side effects after transaction commits
+    # This prevents SQLite locking when cross-machine triggers occur
+    def _fosm_run_deferred_side_effects
+      return unless defined?(@_fosm_deferred_side_effects) && @_fosm_deferred_side_effects
+      
+      transition_data = @_fosm_transition_data
+      
+      @_fosm_deferred_side_effects.each do |side_effect_def|
+        begin
+          side_effect_def.call(self, transition_data)
+        rescue => e
+          # Log error but don't fail - transaction is already committed
+          logger = defined?(Rails) && Rails.respond_to?(:logger) ? Rails.logger : nil
+          logger ||= Logger.new(STDOUT)
+          logger.error("[Fosm] Deferred side effect '#{side_effect_def.name}' failed: #{e.message}")
+        end
+      end
+      
+      # Clean up instance variables
+      @_fosm_deferred_side_effects = nil
+      @_fosm_transition_data = nil
+      
+      # Remove the after_commit callback to avoid running on subsequent updates
+      self.class.skip_callback(:commit, :after, :_fosm_run_deferred_side_effects, on: :update, raise: false)
     end
   end
 end
