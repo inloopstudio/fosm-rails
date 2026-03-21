@@ -25,6 +25,7 @@ class FosmSmokeTest < ActiveSupport::TestCase
     TestInvoice.delete_all
     TestContract.delete_all
   end
+
   test "basic lifecycle works end-to-end" do
     invoice = TestInvoice.create!(
       recipient_email: "smoke@test.com",
@@ -42,11 +43,12 @@ class FosmSmokeTest < ActiveSupport::TestCase
     invoice.pay!(actor: :smoke)
     assert invoice.paid?
 
-    # Refund from terminal
-    invoice.refund!(actor: :smoke)
-    assert invoice.refunded?
+    # Terminal states block all further transitions
+    assert_raises(Fosm::TerminalState) do
+      invoice.refund!(actor: :smoke)
+    end
 
-    puts "✓ Smoke test passed: Full lifecycle"
+    puts "✓ Smoke test passed: Full lifecycle with terminal state enforcement"
   end
 
   test "guard error messages work" do
@@ -63,25 +65,26 @@ class FosmSmokeTest < ActiveSupport::TestCase
     puts "✓ Smoke test passed: Guard diagnostics"
   end
 
-  test "terminal state with force works" do
+  test "terminal state blocks all transitions" do
     invoice = TestInvoice.create!(
       state: "paid",
       recipient_email: "test@test.com",
       line_items_count: 1
     )
 
+    # All events blocked from terminal state
     assert_raises(Fosm::TerminalState) do
       invoice.send_invoice!(actor: :test)
     end
 
-    assert_nothing_raised do
+    assert_raises(Fosm::TerminalState) do
       invoice.refund!(actor: :test)
     end
 
-    puts "✓ Smoke test passed: Terminal state override"
+    puts "✓ Smoke test passed: Terminal state enforcement"
   end
 
-  test "side effect error handling" do
+  test "side effect errors propagate and rollback transaction" do
     invoice = TestInvoice.create!(
       recipient_email: "test@test.com",
       line_items_count: 1
@@ -90,15 +93,15 @@ class FosmSmokeTest < ActiveSupport::TestCase
     invoice.send_invoice!(actor: :test)
     invoice.instance_variable_set(:@should_fail_cancellation, true)
 
-    # Should succeed even though side effect fails
-    assert_nothing_raised do
+    # Side effect error should propagate and rollback
+    assert_raises(RuntimeError) do
       invoice.cancel!(actor: :test)
     end
 
-    # State should be changed even though side effect failed
-    assert_equal "draft", invoice.state
+    # State should NOT change (transaction rolled back)
+    assert_equal "sent", invoice.reload.state
 
-    puts "✓ Smoke test passed: Side effect error recovery"
+    puts "✓ Smoke test passed: Side effect error propagation"
   end
 
   test "cross-machine trigger creates causal chain" do

@@ -2,6 +2,8 @@
 
 require "test_helper"
 require "rake"
+require "dummy/app/models/test_invoice"
+require "dummy/app/models/test_contract"
 
 # =============================================================================
 # GRAPH GENERATOR TESTS
@@ -61,10 +63,6 @@ class FosmGraphTaskTest < ActiveSupport::TestCase
     assert_includes event_names, "send_invoice"
     assert_includes event_names, "pay"
     assert_includes event_names, "refund"
-
-    # Check force flag on refund event
-    refund_event = content["events"].find { |e| e["name"] == "refund" }
-    assert refund_event["force"]
   end
 
   test "graph includes guard and side effect information" do

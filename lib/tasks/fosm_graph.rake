@@ -31,7 +31,6 @@ namespace :fosm do
             name: e.name,
             from: e.from_states,
             to: e.to_state,
-            force: e.force?,
             guards: e.guards.map(&:name),
             side_effects: e.side_effects.map(&:name)
           }

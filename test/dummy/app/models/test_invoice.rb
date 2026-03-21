@@ -40,15 +40,16 @@ class TestInvoice < ApplicationRecord
       inv.payment_received? || "Payment not yet received"
     end
 
-    # 🆕 Compensating event from terminal state
-    event :refund, from: :paid, to: :refunded, force: true
+    # Compensating event from terminal state requires explicit modeling
+    # (not force: true — terminal states should stay terminal)
+    event :refund, from: :paid, to: :refunded
 
-    # 🆕 Side effect with error handling
+    # Side effects - errors propagate naturally (host app can rescue in block if needed)
     event :cancel, from: [ :draft, :sent ], to: :draft
-    side_effect :notify_cancellation, on: :cancel, rescue: :log do |record, transition|
+    side_effect :notify_cancellation, on: :cancel do |record, transition|
       record.notify_cancellation
     end
-    side_effect :update_inventory, on: :cancel, rescue: :ignore do |record, transition|
+    side_effect :update_inventory, on: :cancel do |record, transition|
       record.update_inventory
     end
   end

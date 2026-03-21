@@ -10,7 +10,7 @@ require "dummy/app/models/test_contract"
 # =============================================================================
 
 class FosmLitmusTest < ActiveSupport::TestCase
-  # 🆕 Disable transactional fixtures to avoid SQLite locking with nested transactions
+  # Disable transactional fixtures to avoid SQLite locking with nested transactions
   self.use_transactional_tests = false
 
   def setup
@@ -52,8 +52,8 @@ class FosmLitmusTest < ActiveSupport::TestCase
     assert_equal "draft", empty_invoice.state # State unchanged
   end
 
-  # Litmus 3: Terminal states must block transitions (without force)
-  test "terminal states block normal transitions" do
+  # Litmus 3: Terminal states must block all transitions
+  test "terminal states block all transitions" do
     paid_invoice = TestInvoice.create!(
       state: "paid",
       recipient_email: "test@example.com",
@@ -61,28 +61,17 @@ class FosmLitmusTest < ActiveSupport::TestCase
       payment_received: true
     )
 
+    # All events blocked from terminal state (no force: true override)
     assert_raises(Fosm::TerminalState) do
       paid_invoice.send_invoice!(actor: :test)
     end
-  end
 
-  # Litmus 4: force: true must allow transitions from terminal states
-  test "force: true bypasses terminal state check" do
-    paid_invoice = TestInvoice.create!(
-      state: "paid",
-      recipient_email: "test@example.com",
-      line_items_count: 1,
-      payment_received: true
-    )
-
-    assert_nothing_raised do
+    assert_raises(Fosm::TerminalState) do
       paid_invoice.refund!(actor: :test)
     end
-
-    assert_equal "refunded", paid_invoice.state
   end
 
-  # Litmus 5: Side effects must run inside transaction
+  # Litmus 4: Side effects must run inside transaction
   test "side effects execute and rollback with transaction" do
     # This test verifies the side_effect ran
     assert_nil @invoice.notification_sent
@@ -92,7 +81,7 @@ class FosmLitmusTest < ActiveSupport::TestCase
     assert_equal true, @invoice.notification_sent
   end
 
-  # Litmus 6: Guard failure includes reason in exception
+  # Litmus 5: Guard failure includes reason in exception
   test "GuardFailed includes reason when provided" do
     empty_invoice = TestInvoice.create!(recipient_email: "test@example.com", line_items_count: 0)
 
@@ -105,7 +94,7 @@ class FosmLitmusTest < ActiveSupport::TestCase
     assert_equal "At least one line item required", error.reason
   end
 
-  # Litmus 7: why_cannot_fire? provides actionable diagnostics
+  # Litmus 6: why_cannot_fire? provides actionable diagnostics
   test "why_cannot_fire? returns complete diagnostic information" do
     empty_invoice = TestInvoice.create!(recipient_email: "test@example.com", line_items_count: 0)
 
@@ -120,21 +109,21 @@ class FosmLitmusTest < ActiveSupport::TestCase
     assert_includes result[:reason], "At least one line item required"
   end
 
-  # Litmus 8: rescue: :log prevents side effect errors from failing transition
-  test "side effect with rescue: :log allows transition on error" do
+  # Litmus 7: Side effect errors propagate (no silent rescue)
+  test "side effect errors propagate and fail transaction" do
     @invoice.send_invoice!(actor: :test)
     @invoice.instance_variable_set(:@should_fail_cancellation, true)
 
-    # Should NOT raise despite side effect failing
-    assert_nothing_raised do
+    # Side effect error should propagate and fail the transition
+    assert_raises(RuntimeError) do
       @invoice.cancel!(actor: :test)
     end
 
-    assert_equal "draft", @invoice.state
-    assert_nil @invoice.cancellation_notified # Side effect failed, but logged
+    # State should NOT change because transaction rolled back
+    assert_equal "sent", @invoice.reload.state
   end
 
-  # Litmus 9: triggered_by metadata creates causal chain
+  # Litmus 8: triggered_by metadata auto-captures causal chain
   test "triggered_by metadata links cross-machine transitions" do
     contract = TestContract.create!
     contract.send_for_payment!(actor: :test)
@@ -152,11 +141,11 @@ class FosmLitmusTest < ActiveSupport::TestCase
     # Contract should be activated by deferred side effect
     assert_equal "active", contract.state
 
-    # Verify the causal chain was logged
+    # Verify the causal chain was auto-captured
     log = Fosm::TransitionLog.where(record_type: "TestContract").last
     assert log.metadata["triggered_by"]
     assert_equal "TestOrder", log.metadata["triggered_by"]["record_type"]
-    assert_equal order.id, log.metadata["triggered_by"]["record_id"]
+    assert_equal order.id.to_s, log.metadata["triggered_by"]["record_id"]
     assert_equal "complete", log.metadata["triggered_by"]["event_name"]
   end
 end

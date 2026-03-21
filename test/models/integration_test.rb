@@ -199,10 +199,10 @@ class FosmIntegrationTest < ActiveSupport::TestCase
   end
 
   # ============================================================================
-  # Terminal State Override Tests
+  # Terminal State Tests (simplified - no force: true override)
   # ============================================================================
 
-  class TerminalStateOverrideTest < ActiveSupport::TestCase
+  class TerminalStateTest < ActiveSupport::TestCase
     self.use_transactional_tests = false
 
     def setup
@@ -226,7 +226,8 @@ class FosmIntegrationTest < ActiveSupport::TestCase
       TestContract.delete_all
     end
 
-    test "normal events blocked from terminal" do
+    test "all events blocked from terminal state" do
+      # Terminal states block ALL events (no force: true override)
       assert_raises(Fosm::TerminalState) do
         @paid_invoice.send_invoice!(actor: :test)
       end
@@ -238,111 +239,25 @@ class FosmIntegrationTest < ActiveSupport::TestCase
       assert_raises(Fosm::TerminalState) do
         @paid_invoice.cancel!(actor: :test)
       end
-    end
 
-    test "force: true events allowed from terminal" do
-      assert_nothing_raised do
+      assert_raises(Fosm::TerminalState) do
         @paid_invoice.refund!(actor: :test)
       end
-
-      assert_equal "refunded", @paid_invoice.reload.state
     end
 
-    test "can_fire? respects terminal state" do
+    test "can_fire? returns false for all events in terminal state" do
       refute @paid_invoice.can_send_invoice?
       refute @paid_invoice.can_pay?
-
-      # Note: can_fire? doesn't know about force: true
-      # It follows normal terminal state rules
       refute @paid_invoice.can_refund?
     end
 
-    test "why_cannot_fire? shows terminal with force hint" do
+    test "why_cannot_fire? shows terminal state without force hint" do
       result = @paid_invoice.why_cannot_fire?(:send_invoice)
 
       assert_equal true, result[:is_terminal]
       assert_includes result[:reason], "terminal"
-      assert_includes result[:reason], "force: true"
-    end
-  end
-
-  # ============================================================================
-  # Side Effect Error Handling Tests
-  # ============================================================================
-
-  class SideEffectRescueTest < ActiveSupport::TestCase
-    self.use_transactional_tests = false
-
-    def setup
-      Fosm::TransitionLog.delete_all
-      TestOrder.delete_all
-      TestInvoice.delete_all
-      TestContract.delete_all
-
-      @invoice = TestInvoice.create!(
-        recipient_email: "test@test.com",
-        line_items_count: 1
-      )
-      @invoice.send_invoice!(actor: :test)
-    end
-
-    def teardown
-      Fosm::TransitionLog.delete_all
-      TestOrder.delete_all
-      TestInvoice.delete_all
-      TestContract.delete_all
-    end
-
-    test "rescue: :raise propagates errors" do
-      # Default behavior - should raise
-      side_effect = Fosm::Lifecycle::SideEffectDefinition.new(name: :failer) do
-        raise "Intentional failure"
-      end
-
-      assert_raises(RuntimeError) do
-        side_effect.call(nil, nil)
-      end
-    end
-
-    test "rescue: :log catches and logs errors" do
-      side_effect = Fosm::Lifecycle::SideEffectDefinition.new(name: :failer, rescue_strategy: :log) do
-        raise "Should be logged"
-      end
-
-      # Should not raise
-      result = side_effect.call(nil, nil)
-      assert_nil result
-    end
-
-    test "rescue: :ignore silently drops errors" do
-      side_effect = Fosm::Lifecycle::SideEffectDefinition.new(name: :failer, rescue_strategy: :ignore) do
-        raise "Should be ignored"
-      end
-
-      # Should not raise, should not log
-      result = side_effect.call(nil, nil)
-      assert_nil result
-    end
-
-    test "cancel event with rescue: :log allows transition despite error" do
-      @invoice.instance_variable_set(:@should_fail_cancellation, true)
-
-      # This should succeed even though notify_cancellation fails
-      assert_nothing_raised do
-        @invoice.cancel!(actor: :test)
-      end
-
-      assert_equal "draft", @invoice.state
-    end
-
-    test "successful side effects still run" do
-      @invoice.instance_variable_set(:@should_fail_cancellation, false)
-
-      @invoice.cancel!(actor: :test)
-
-      # Both side effects should have run
-      assert_equal true, @invoice.cancellation_notified
-      assert_equal true, @invoice.inventory_updated
+      # Should NOT mention force: true since it's removed
+      refute_includes result[:reason], "force"
     end
   end
 
@@ -379,7 +294,7 @@ class FosmIntegrationTest < ActiveSupport::TestCase
       assert_equal "active", @contract.state
     end
 
-    test "triggered_by metadata in transition log" do
+    test "triggered_by metadata auto-captured in transition log" do
       @order.start_processing!(actor: :test)
       @order.complete!(actor: :test)
 
@@ -391,7 +306,7 @@ class FosmIntegrationTest < ActiveSupport::TestCase
       assert log.present?
       assert log.metadata["triggered_by"].present?
       assert_equal "TestOrder", log.metadata["triggered_by"]["record_type"]
-      assert_equal @order.id, log.metadata["triggered_by"]["record_id"]
+      assert_equal @order.id.to_s, log.metadata["triggered_by"]["record_id"]
       assert_equal "complete", log.metadata["triggered_by"]["event_name"]
     end
 
@@ -422,25 +337,28 @@ class FosmIntegrationTest < ActiveSupport::TestCase
   # ============================================================================
 
   class EventDefinitionTest < ActiveSupport::TestCase
-    test "force? returns false by default" do
+    test "event stores name, from, and to" do
       event = Fosm::Lifecycle::EventDefinition.new(
         name: :test,
         from: :draft,
         to: :sent
       )
 
-      refute event.force?
+      assert_equal :test, event.name
+      assert_equal [ :draft ], event.from_states
+      assert_equal :sent, event.to_state
     end
 
-    test "force? returns true when force: true" do
+    test "valid_from? checks from_states" do
       event = Fosm::Lifecycle::EventDefinition.new(
         name: :test,
-        from: :draft,
-        to: :sent,
-        force: true
+        from: [ :draft, :sent ],
+        to: :paid
       )
 
-      assert event.force?
+      assert event.valid_from?(:draft)
+      assert event.valid_from?(:sent)
+      refute event.valid_from?(:paid)
     end
   end
 end

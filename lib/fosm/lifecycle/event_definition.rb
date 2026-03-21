@@ -1,13 +1,12 @@
 module Fosm
   module Lifecycle
     class EventDefinition
-      attr_reader :name, :from_states, :to_state, :guards, :side_effects, :force
+      attr_reader :name, :from_states, :to_state, :guards, :side_effects
 
-      def initialize(name:, from:, to:, force: false)
+      def initialize(name:, from:, to:)
         @name = name.to_sym
         @from_states = Array(from).map(&:to_sym)
         @to_state = to.to_sym
-        @force = force
         @guards = []
         @side_effects = []
       end
@@ -22,11 +21,6 @@ module Fosm
 
       def valid_from?(state)
         @from_states.include?(state.to_sym)
-      end
-
-      # 🆕 Whether this event can bypass terminal state check
-      def force?
-        @force
       end
     end
   end
