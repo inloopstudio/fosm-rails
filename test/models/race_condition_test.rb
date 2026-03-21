@@ -6,7 +6,7 @@ require "dummy/app/models/test_invoice"
 # =============================================================================
 # RACE CONDITION & SERIALIZABLE ISOLATION SANDBOX
 # =============================================================================
-# 
+#
 # PURPOSE:
 # This test demonstrates the race condition risks in FOSM's current transaction
 # isolation and explores whether SERIALIZABLE is the right solution.
@@ -79,22 +79,22 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
 
   test "theoretical race condition with concurrent same-event transitions" do
     skip "Race conditions require true parallelism - this documents the risk"
-    
+
     # Setup: Create invoice in draft state
     invoice = TestInvoice.create!(
       recipient_email: "test@example.com",
       line_items_count: 1,
       state: "draft"
     )
-    
+
     # In a real race scenario:
     # Thread 1 and Thread 2 both call send_invoice! at the same instant
     # Both see state='draft', both pass guards, both UPDATE
-    # 
+    #
     # With READ COMMITTED: Both succeed (incorrect)
     # With SERIALIZABLE: Second transaction fails with serialization_failure
     # With SELECT FOR UPDATE: Second transaction blocks until first commits
-    
+
     # We can't easily test true concurrency in SQLite/Rails test env,
     # but this test serves as documentation of the vulnerability
   end
@@ -110,19 +110,19 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
       line_items_count: 1,
       state: "draft"
     )
-    
+
     # Simulate: Transaction 1 reads state
     original_state = invoice.state
     assert_equal "draft", original_state
-    
+
     # Simulate: Another transaction changes state (like a concurrent send_invoice)
     # In real race, this happens between read and write in different connection
     invoice.update_column(:state, "sent")
-    
+
     # Our transaction's view of guards is now stale
     # If we had checked can_send_invoice? before the other UPDATE, it returned true
     # Now the state is "sent" but our code might still proceed if we don't re-check
-    
+
     # The UPDATE in fire! would still work (state='sent' WHERE id=X),
     # but it would be updating an already-sent invoice
     refute_equal original_state, invoice.reload.state
@@ -142,24 +142,24 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
 
   test "serializable isolation prevents read-write conflicts" do
     skip "SQLite doesn't support per-transaction isolation levels"
-    
+
     # This is what the code would look like with SERIALIZABLE:
-    # 
+    #
     # ActiveRecord::Base.transaction(isolation: :serializable) do
     #   # 1. Read current state (establishes predicate lock)
     #   current = self.state.to_s
-    #   
+    #
     #   # 2. Check guards (pure functions)
     #   # ...
-    #   
+    #
     #   # 3. UPDATE state
     #   update!(state: to_state)
-    #   
+    #
     #   # 4. On COMMIT, if another transaction also read this row and wrote,
     #   #    we get: ActiveRecord::SerializationFailure
     #   #    Must retry the entire transaction
     # end
-    
+
     # The retry logic would look like:
     # begin
     #   ActiveRecord::Base.transaction(isolation: :serializable) do
@@ -179,23 +179,23 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
 
   test "select for update blocks concurrent modifications" do
     skip "Demonstrates pattern, not a runnable test"
-    
+
     # Pattern for SELECT FOR UPDATE in fire!:
     #
     # ActiveRecord::Base.transaction do
     #   # Lock the row immediately
     #   self.class.lock.find(self.id)  # SELECT ... FOR UPDATE
-    #   
+    #
     #   # Re-read state after locking (guaranteed fresh)
     #   current = self.state.to_s
-    #   
+    #
     #   # Check terminal, valid_from, guards...
     #   # If another transaction tries to lock, it blocks here
-    #   
+    #
     #   update!(state: to_state)
     #   # ... rest of fire!
     # end
-    
+
     # Pros:
     # - Explicit, easy to understand
     # - Works on all databases
@@ -219,7 +219,7 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
       line_items_count: 1,
       state: "draft"
     )
-    
+
     # The fix adds SELECT FOR UPDATE via self.class.lock.find(id)
     # This is confirmed by code inspection:
     # - Line ~137: locked_record = self.class.lock.find(self.id)
@@ -234,7 +234,7 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
     #
     # With SELECT FOR UPDATE, the second transaction blocks until the first
     # commits, then re-validates with the fresh state.
-    
+
     assert_nil invoice.lock_version rescue nil  # No optimistic locking needed
     assert invoice.respond_to?(:fire!)
   end
@@ -246,15 +246,15 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
 
   test "optimistic locking pattern" do
     skip "Demonstrates pattern, not a runnable test"
-    
+
     # Pattern for optimistic locking:
     #
     # 1. Add lock_version column to all FOSM tables
     # 2. Rails automatically includes lock_version in UPDATE WHERE clause
     # 3. If version changed since read, StaleObjectError is raised
     #
-    # UPDATE test_invoices 
-    # SET state = 'sent', lock_version = 2 
+    # UPDATE test_invoices
+    # SET state = 'sent', lock_version = 2
     # WHERE id = 1 AND lock_version = 1
     #
     # If 0 rows affected: raise ActiveRecord::StaleObjectError
@@ -275,7 +275,7 @@ end
 # =============================================================================
 # RECOMMENDATION ANALYSIS
 # =============================================================================
-# 
+#
 # Option 1: SERIALIZABLE Isolation
 # - Best theoretical guarantee
 # - Requires retry logic for serialization failures
@@ -298,10 +298,10 @@ end
 # - Most Rails-like solution
 #
 # CURRENT STATUS: ✅ FIXED - SELECT FOR UPDATE implemented
-# 
+#
 # The fix was implemented in lib/fosm/lifecycle.rb:
 #   1. Added `locked_record = self.class.lock.find(self.id)` to acquire row lock
-#   2. Re-validate state, guards, and RBAC after lock acquisition  
+#   2. Re-validate state, guards, and RBAC after lock acquisition
 #   3. Use `locked_record.update!(state: to_state)` inside transaction
 #   4. Sync `self.state = to_state` after update
 #   5. Set deferred side effect instance variables on locked_record (for after_commit)
