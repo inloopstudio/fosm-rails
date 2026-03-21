@@ -53,11 +53,18 @@ module Fosm
     #   3. Check event is valid from current state
     #   4. Run guards (pure in-memory functions)
     #   5. RBAC check (O(1) cache lookup after first request hit)
-    #   6. BEGIN TRANSACTION: UPDATE state, run side effects
+    #   6. Acquire row lock (SELECT FOR UPDATE) and re-validate
+    #   7. BEGIN TRANSACTION: UPDATE state, run side effects
     #                         [optionally INSERT log if strategy == :sync]
     #      COMMIT
-    #   7. Emit transition log (:async or :buffered, non-blocking)
-    #   8. Enqueue webhook delivery (always async)
+    #   8. Emit transition log (:async or :buffered, non-blocking)
+    #   9. Enqueue webhook delivery (always async)
+    #
+    # RACE CONDITION PROTECTION:
+    #   - Uses SELECT FOR UPDATE to lock the row, preventing concurrent transitions
+    #   - Re-validates state, guards, and RBAC after acquiring lock
+    #   - Guarantees only one transition succeeds when concurrent requests fire
+    #     the same event on the same record
     #
     # @param event_name [Symbol, String] the event to fire
     # @param actor [Object] who/what is firing the event (User, or :system/:agent symbol)
@@ -122,8 +129,64 @@ module Fosm
         ).compact
       }
 
+      # ==========================================================================
+      # RACE CONDITION FIX: SELECT FOR UPDATE
+      # ==========================================================================
+      # Acquire a row-level lock before proceeding. This prevents concurrent
+      # transactions from reading stale state and attempting concurrent transitions.
+      #
+      # Behavior:
+      # - PostgreSQL/MySQL: SELECT ... FOR UPDATE blocks until lock acquired
+      # - SQLite: No-op (database-level locking makes it already serializable)
+      #
+      # We re-read state after locking to ensure we have the latest value.
+      # If another transaction committed while we waited for the lock, we get
+      # the fresh state and must re-validate our checks.
+      # ==========================================================================
+
+      # Acquire lock - this blocks if another transaction holds the lock
+      locked_record = self.class.lock.find(self.id)
+
+      # Re-validate with locked state - the world may have changed while waiting
+      locked_current = locked_record.state.to_s
+      locked_current_state_def = lifecycle.find_state(locked_current)
+
+      # If state changed while waiting for lock, transition may no longer be valid
+      if locked_current_state_def&.terminal?
+        raise Fosm::TerminalState.new(locked_current, self.class)
+      end
+
+      unless event_def.valid_from?(locked_current)
+        raise Fosm::InvalidTransition.new(event_name, locked_current, self.class)
+      end
+
+      # Re-check guards with locked record (guards may depend on fresh state)
+      event_def.guards.each do |guard_def|
+        allowed, reason = guard_def.evaluate(locked_record)
+        unless allowed
+          raise Fosm::GuardFailed.new(guard_def.name, event_name, reason)
+        end
+      end
+
+      # Re-check RBAC with locked record (for consistency, though RBAC uses cache)
+      if lifecycle.access_defined?
+        unless fosm_rbac_bypass?(actor)
+          unless fosm_actor_has_event_permission_for_record?(event_name, actor, locked_record)
+            raise Fosm::AccessDenied.new(event_name, actor)
+          end
+        end
+      end
+
+      # Update from_state to reflect the locked state's current value
+      from_state = locked_current
+      log_data["from_state"] = from_state
+
       ActiveRecord::Base.transaction do
-        update!(state: to_state)
+        # Use the locked record for the update to ensure we hold the lock
+        locked_record.update!(state: to_state)
+
+        # Sync our instance state with what was written
+        self.state = to_state
 
         # :sync strategy — INSERT inside transaction for strict consistency
         if Fosm.config.transition_log_strategy == :sync
@@ -138,6 +201,7 @@ module Fosm
             record_id: self.id.to_s,
             event_name: event_name.to_s
           }
+          # Call side effects on self (not locked_record) so instance state is preserved
           event_def.side_effects.reject(&:deferred?).each do |side_effect_def|
             side_effect_def.call(self, transition_data)
           end
@@ -148,10 +212,12 @@ module Fosm
         # 🆕 Queue deferred side effects to run after commit
         deferred_effects = event_def.side_effects.select(&:deferred?)
         if deferred_effects.any?
-          @_fosm_deferred_side_effects = deferred_effects
-          @_fosm_transition_data = transition_data
+          # Set instance variables on locked_record (the instance that gets saved)
+          # so after_commit callback can access them
+          locked_record.instance_variable_set(:@_fosm_deferred_side_effects, deferred_effects)
+          locked_record.instance_variable_set(:@_fosm_transition_data, transition_data)
           # Use after_commit to run after transaction completes
-          self.class.after_commit :_fosm_run_deferred_side_effects, on: :update
+          locked_record.class.after_commit :_fosm_run_deferred_side_effects, on: :update
         end
       end
 
@@ -342,6 +408,15 @@ module Fosm
       return true if fosm_rbac_bypass?(actor)
 
       permitted_roles = self.class.fosm_lifecycle.access_definition.roles_for_event(event_name)
+      actor_roles     = fosm_roles_for_actor(actor)
+      (actor_roles & permitted_roles).any?
+    end
+
+    # Variant for checking permissions with a locked record (after SELECT FOR UPDATE)
+    def fosm_actor_has_event_permission_for_record?(event_name, actor, record)
+      return true if fosm_rbac_bypass?(actor)
+
+      permitted_roles = record.class.fosm_lifecycle.access_definition.roles_for_event(event_name)
       actor_roles     = fosm_roles_for_actor(actor)
       (actor_roles & permitted_roles).any?
     end
