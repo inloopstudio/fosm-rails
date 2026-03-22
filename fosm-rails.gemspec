@@ -3,8 +3,8 @@ require_relative "lib/fosm/version"
 Gem::Specification.new do |spec|
   spec.name        = "fosm-rails"
   spec.version     = Fosm::VERSION
-  spec.authors     = ["Abhishek Parolkar"]
-  spec.email       = ["abhishek@parolkar.com"]
+  spec.authors     = [ "Abhishek Parolkar" ]
+  spec.email       = [ "abhishek@parolkar.com" ]
   spec.homepage    = "https://github.com/inloopstudio/fosm-rails"
   spec.summary     = "Finite Object State Machine for Rails — declarative lifecycles for business objects"
   spec.description = "FOSM gives your Rails models a formal, enforced lifecycle with states, events, guards, side-effects, and an AI agent interface. Business rules live in the model, not scattered across callbacks."

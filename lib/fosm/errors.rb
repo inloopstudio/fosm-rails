@@ -16,9 +16,17 @@ module Fosm
   end
 
   # Raised when a guard blocks a transition
+  # 🆕 Supports optional reason for better error messages
   class GuardFailed < Error
-    def initialize(guard_name, event_name)
-      super("Guard '#{guard_name}' prevented transition for event '#{event_name}'")
+    attr_reader :guard_name, :event_name, :reason
+
+    def initialize(guard_name, event_name, reason = nil)
+      @guard_name = guard_name
+      @event_name = event_name
+      @reason = reason
+      msg = "Guard '#{guard_name}' prevented transition for event '#{event_name}'"
+      msg += ": #{reason}" if reason
+      super(msg)
     end
   end
 
