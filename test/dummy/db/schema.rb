@@ -23,10 +23,10 @@ ActiveRecord::Schema[8.1].define(version: 2024_03_20_000000) do
     t.string "user_id", null: false
     t.string "user_label"
     t.string "user_type", null: false
-    t.index ["action"], name: "idx_fosm_ae_action"
-    t.index ["created_at"], name: "idx_fosm_ae_created_at"
-    t.index ["resource_type", "resource_id"], name: "idx_fosm_ae_resource"
-    t.index ["user_type", "user_id"], name: "idx_fosm_ae_user"
+    t.index [ "action" ], name: "idx_fosm_ae_action"
+    t.index [ "created_at" ], name: "idx_fosm_ae_created_at"
+    t.index [ "resource_type", "resource_id" ], name: "idx_fosm_ae_resource"
+    t.index [ "user_type", "user_id" ], name: "idx_fosm_ae_user"
   end
 
   create_table "fosm_role_assignments", force: :cascade do |t|
@@ -38,9 +38,9 @@ ActiveRecord::Schema[8.1].define(version: 2024_03_20_000000) do
     t.string "role_name", null: false
     t.string "user_id", null: false
     t.string "user_type", null: false
-    t.index ["resource_type", "resource_id", "role_name"], name: "idx_fosm_roles_resource_role"
-    t.index ["user_type", "user_id", "resource_type", "resource_id", "role_name"], name: "idx_fosm_roles_unique", unique: true
-    t.index ["user_type", "user_id", "resource_type", "resource_id"], name: "idx_fosm_roles_user_resource"
+    t.index [ "resource_type", "resource_id", "role_name" ], name: "idx_fosm_roles_resource_role"
+    t.index [ "user_type", "user_id", "resource_type", "resource_id", "role_name" ], name: "idx_fosm_roles_unique", unique: true
+    t.index [ "user_type", "user_id", "resource_type", "resource_id" ], name: "idx_fosm_roles_user_resource"
   end
 
   create_table "fosm_transition_logs", force: :cascade do |t|
@@ -56,11 +56,11 @@ ActiveRecord::Schema[8.1].define(version: 2024_03_20_000000) do
     t.string "snapshot_reason"
     t.json "state_snapshot"
     t.string "to_state", null: false
-    t.index ["actor_label"], name: "idx_fosm_tl_actor"
-    t.index ["created_at"], name: "idx_fosm_tl_created_at"
-    t.index ["event_name"], name: "idx_fosm_tl_event"
-    t.index ["record_type", "record_id"], name: "idx_fosm_tl_record"
-    t.index ["snapshot_reason"], name: "idx_fosm_tl_snapshot_reason"
+    t.index [ "actor_label" ], name: "idx_fosm_tl_actor"
+    t.index [ "created_at" ], name: "idx_fosm_tl_created_at"
+    t.index [ "event_name" ], name: "idx_fosm_tl_event"
+    t.index [ "record_type", "record_id" ], name: "idx_fosm_tl_record"
+    t.index [ "snapshot_reason" ], name: "idx_fosm_tl_snapshot_reason"
   end
 
   create_table "fosm_webhook_subscriptions", force: :cascade do |t|
@@ -71,8 +71,8 @@ ActiveRecord::Schema[8.1].define(version: 2024_03_20_000000) do
     t.string "secret_token"
     t.datetime "updated_at", null: false
     t.string "url", null: false
-    t.index ["active"], name: "idx_fosm_webhooks_active"
-    t.index ["model_class_name", "event_name"], name: "idx_fosm_webhooks_model_event"
+    t.index [ "active" ], name: "idx_fosm_webhooks_active"
+    t.index [ "model_class_name", "event_name" ], name: "idx_fosm_webhooks_model_event"
   end
 
   create_table "test_contracts", force: :cascade do |t|
@@ -95,7 +95,7 @@ ActiveRecord::Schema[8.1].define(version: 2024_03_20_000000) do
     t.string "state", default: "pending"
     t.integer "test_contract_id"
     t.datetime "updated_at", null: false
-    t.index ["test_contract_id"], name: "index_test_orders_on_test_contract_id"
+    t.index [ "test_contract_id" ], name: "index_test_orders_on_test_contract_id"
   end
 
   add_foreign_key "test_orders", "test_contracts"
