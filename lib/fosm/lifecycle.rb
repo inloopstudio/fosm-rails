@@ -34,8 +34,8 @@ module Fosm
 
         # Generate dynamic bang methods per event: invoice.send_invoice!(actor: user)
         fosm_lifecycle.events.each do |event_def|
-          define_method(:"#{event_def.name}!") do |actor: nil, metadata: {}|
-            fire!(event_def.name, actor: actor, metadata: metadata)
+          define_method(:"#{event_def.name}!") do |actor: nil, metadata: {}, snapshot_data: nil|
+            fire!(event_def.name, actor: actor, metadata: metadata, snapshot_data: snapshot_data)
           end
 
           define_method(:"can_#{event_def.name}?") do
@@ -69,12 +69,15 @@ module Fosm
     # @param event_name [Symbol, String] the event to fire
     # @param actor [Object] who/what is firing the event (User, or :system/:agent symbol)
     # @param metadata [Hash] optional metadata stored in the transition log
+    # @param snapshot_data [Hash] arbitrary observations/data to include in state snapshot
+    #   This allows capturing adhoc observations alongside schema attributes.
+    #   Merged with schema data under the `_observations` key in the snapshot.
     # @raise [Fosm::UnknownEvent]    if event doesn't exist
     # @raise [Fosm::TerminalState]   if current state is terminal
     # @raise [Fosm::InvalidTransition] if current state doesn't allow this event
     # @raise [Fosm::GuardFailed]     if a guard blocks the transition
     # @raise [Fosm::AccessDenied]    if actor lacks a role that permits this event
-    def fire!(event_name, actor: nil, metadata: {})
+    def fire!(event_name, actor: nil, metadata: {}, snapshot_data: nil)
       lifecycle = self.class.fosm_lifecycle
       raise Fosm::Error, "No lifecycle defined on #{self.class.name}" unless lifecycle
 
@@ -128,6 +131,58 @@ module Fosm
           triggered_by ? { triggered_by: triggered_by } : {}
         ).compact
       }
+
+      # ==========================================================================
+      # SNAPSHOT CONFIGURATION
+      # ==========================================================================
+      # If snapshots are configured, determine if we should capture one for this
+      # transition based on the strategy (every, count, time, terminal, manual).
+      # ==========================================================================
+      snapshot_config = lifecycle.snapshot_configuration
+      if snapshot_config && metadata[:snapshot] != false  # allow manual opt-out
+        # Calculate metrics for snapshot decision
+        last_snapshot = Fosm::TransitionLog
+          .where(record_type: self.class.name, record_id: self.id.to_s)
+          .where.not(state_snapshot: nil)
+          .order(created_at: :desc)
+          .first
+
+        transitions_since = last_snapshot ?
+          Fosm::TransitionLog.where(record_type: self.class.name, record_id: self.id.to_s)
+            .where("created_at > ?", last_snapshot.created_at).count :
+          Fosm::TransitionLog.where(record_type: self.class.name, record_id: self.id.to_s).count
+
+        seconds_since = last_snapshot ?
+          (Time.current - last_snapshot.created_at).to_f :
+          Float::INFINITY
+
+        to_state_def = lifecycle.find_state(to_state)
+
+        # Check if we should snapshot (respecting manual: false unless forced)
+        force_snapshot = metadata[:snapshot] == true
+        should_snapshot = snapshot_config.should_snapshot?(
+          transition_count: transitions_since,
+          seconds_since_last: seconds_since,
+          to_state: to_state,
+          to_state_terminal: to_state_def&.terminal? || false,
+          force: force_snapshot
+        )
+
+        if should_snapshot
+          # Build snapshot: schema attributes + arbitrary observations
+          schema_snapshot = snapshot_config.build_snapshot(self)
+
+          # Merge arbitrary observations if provided (stored under _observations key)
+          if snapshot_data.present?
+            schema_snapshot["_observations"] = snapshot_data.as_json
+          end
+
+          log_data["state_snapshot"] = schema_snapshot
+          log_data["snapshot_reason"] = determine_snapshot_reason(
+            snapshot_config.strategy, force_snapshot, to_state_def
+          )
+        end
+      end
 
       # ==========================================================================
       # RACE CONDITION FIX: SELECT FOR UPDATE
@@ -342,6 +397,95 @@ module Fosm
       self.state.to_sym
     end
 
+    # ==========================================================================
+    # SNAPSHOT REPLAY AND TIME-TRAVEL METHODS
+    # ==========================================================================
+
+    # Returns the most recent snapshot for this record, or nil if none exists.
+    # @return [Fosm::TransitionLog, nil] the transition log entry with snapshot
+    def last_snapshot
+      Fosm::TransitionLog
+        .where(record_type: self.class.name, record_id: self.id.to_s)
+        .where.not(state_snapshot: nil)
+        .order(created_at: :desc)
+        .first
+    end
+
+    # Returns the snapshot data from the most recent snapshot, or nil.
+    # @return [Hash, nil] the snapshot data
+    def last_snapshot_data
+      last_snapshot&.state_snapshot
+    end
+
+    # Returns the state of the record at a specific transition log ID.
+    # This is a "time-travel" query that reconstructs state from snapshot + replay.
+    #
+    # @param transition_log_id [Integer] the ID of the transition log entry
+    # @return [Hash] the reconstructed state at that point in time
+    def state_at_transition(transition_log_id)
+      log = Fosm::TransitionLog.find_by(id: transition_log_id)
+      return nil unless log
+      return nil unless log.record_type == self.class.name && log.record_id == self.id.to_s
+
+      # If this log entry has a snapshot, use it directly
+      return log.state_snapshot if log.state_snapshot.present?
+
+      # Otherwise, find the most recent snapshot before this log entry
+      prior_snapshot = Fosm::TransitionLog
+        .where(record_type: self.class.name, record_id: self.id.to_s)
+        .where.not(state_snapshot: nil)
+        .where("created_at <= ?", log.created_at)
+        .order(created_at: :desc)
+        .first
+
+      # Return the prior snapshot data, or nil if no snapshot exists
+      prior_snapshot&.state_snapshot
+    end
+
+    # Replays events from a specific snapshot forward to the current state.
+    # Yields each transition to a block for custom processing.
+    #
+    # @param from_snapshot [Fosm::TransitionLog, Integer] snapshot log entry or ID
+    # @yield [transition_log] optional block to process each transition
+    # @return [Array<Fosm::TransitionLog>] the transitions replayed
+    def replay_from(from_snapshot)
+      snapshot_id = from_snapshot.is_a?(Fosm::TransitionLog) ? from_snapshot.id : from_snapshot
+
+      transitions = Fosm::TransitionLog
+        .where(record_type: self.class.name, record_id: self.id.to_s)
+        .where("id > ?", snapshot_id)
+        .order(:created_at)
+
+      if block_given?
+        transitions.each { |log| yield log }
+      end
+
+      transitions.to_a
+    end
+
+    # Returns all snapshots for this record in chronological order.
+    # Useful for audit trails and debugging.
+    # @return [ActiveRecord::Relation] snapshot transition logs
+    def snapshots
+      Fosm::TransitionLog
+        .where(record_type: self.class.name, record_id: self.id.to_s)
+        .where.not(state_snapshot: nil)
+        .order(:created_at)
+    end
+
+    # Returns the number of transitions since the last snapshot.
+    # Useful for monitoring snapshot coverage.
+    # @return [Integer] transitions since last snapshot
+    def transitions_since_snapshot
+      last_snap = last_snapshot
+      return Fosm::TransitionLog.where(record_type: self.class.name, record_id: self.id.to_s).count unless last_snap
+
+      Fosm::TransitionLog
+        .where(record_type: self.class.name, record_id: self.id.to_s)
+        .where("created_at > ?", last_snap.created_at)
+        .count
+    end
+
     private
 
     def fosm_set_initial_state
@@ -487,6 +631,16 @@ module Fosm
 
       # Remove the after_commit callback to avoid running on subsequent updates
       self.class.skip_callback(:commit, :after, :_fosm_run_deferred_side_effects, on: :update, raise: false)
+    end
+
+    # Determine the reason string for a snapshot based on strategy and context
+    def determine_snapshot_reason(strategy, forced, to_state_def)
+      return "manual" if forced
+      return "every" if strategy == :every
+      return "terminal" if strategy == :terminal && to_state_def&.terminal?
+      return "count_interval" if strategy == :count
+      return "time_interval" if strategy == :time
+      "auto"
     end
   end
 end
