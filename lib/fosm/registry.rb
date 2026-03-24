@@ -6,6 +6,11 @@ module Fosm
 
     class << self
       def register(model_class, slug:)
+        unless slug.match?(/\A[a-z0-9_]+\z/)
+          raise ArgumentError, "FOSM slug must contain only lowercase letters, digits, and underscores " \
+                               "(got: #{slug.inspect} for #{model_class.name}). " \
+                               "Hyphens are not allowed because slugs are used to construct Ruby route helper names."
+        end
         @registered[slug] = model_class
       end
 

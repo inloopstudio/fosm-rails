@@ -12,12 +12,16 @@
       <% end %>
     </div>
     <div class="flex gap-2 shrink-0">
-      <%= link_to "View all #{@model_class.name.demodulize.humanize.pluralize}",
-                  main_app.send("fosm_#{@slug.pluralize}_path"),
-                  class: "text-sm border border-gray-200 bg-white text-gray-700 px-3 py-1.5 rounded hover:bg-gray-50" %>
-      <%= link_to "+ New #{@model_class.name.demodulize.humanize}",
-                  main_app.send("new_fosm_#{@slug}_path"),
-                  class: "text-sm bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-700" %>
+      <% if main_app.respond_to?("fosm_#{@slug.pluralize}_path") %>
+        <%= link_to "View all #{@model_class.name.demodulize.humanize.pluralize}",
+                    main_app.send("fosm_#{@slug.pluralize}_path"),
+                    class: "text-sm border border-gray-200 bg-white text-gray-700 px-3 py-1.5 rounded hover:bg-gray-50" %>
+      <% end %>
+      <% if main_app.respond_to?("new_fosm_#{@slug}_path") %>
+        <%= link_to "+ New #{@model_class.name.demodulize.humanize}",
+                    main_app.send("new_fosm_#{@slug}_path"),
+                    class: "text-sm bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-700" %>
+      <% end %>
       <%= link_to "Agent Tools",
                   fosm.agent_admin_app_path(@slug),
                   class: "text-sm border border-purple-200 bg-purple-50 text-purple-700 px-3 py-1.5 rounded hover:bg-purple-100" %>
@@ -186,9 +190,13 @@
           <% @recent_transitions.each do |t| %>
             <tr>
               <td class="py-2 text-gray-600">
-                <%= link_to "##{t.record_id}",
-                            main_app.send("fosm_#{@slug}_path", t.record_id),
-                            class: "text-blue-600 hover:underline" %>
+                <% if main_app.respond_to?("fosm_#{@slug}_path") %>
+                  <%= link_to "##{t.record_id}",
+                              main_app.send("fosm_#{@slug}_path", t.record_id),
+                              class: "text-blue-600 hover:underline" %>
+                <% else %>
+                  <span class="text-gray-500">#<%= t.record_id %></span>
+                <% end %>
               </td>
               <td class="py-2 font-medium"><%= t.event_name %></td>
               <td class="py-2">

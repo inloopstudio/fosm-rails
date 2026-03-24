@@ -125,7 +125,7 @@ module Fosm
           klass.respond_to?(:fosm_lifecycle) &&
           klass.fosm_lifecycle.present?
       }.each do |klass|
-        slug = klass.name.demodulize.underscore.dasherize
+        slug = klass.name.demodulize.underscore
         Fosm::Registry.register(klass, slug: slug)
       end
 
