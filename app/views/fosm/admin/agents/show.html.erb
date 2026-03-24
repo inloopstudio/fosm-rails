@@ -1,12 +1,12 @@
 <div class="p-6 space-y-8">
   <div class="flex items-center gap-3">
-    <%= link_to "← #{@model_class.name.demodulize.humanize}", fosm.admin_app_path(@slug), class: "text-sm text-blue-600 hover:underline" %>
+    <%= link_to "← #{@model_class.name.demodulize.titleize}", fosm.admin_app_path(@slug), class: "text-sm text-blue-600 hover:underline" %>
   </div>
 
   <!-- Header -->
   <div class="flex items-start justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900"><%= @model_class.name.demodulize.humanize %> Agent</h1>
+      <h1 class="text-2xl font-bold text-gray-900"><%= @model_class.name.demodulize.titleize %> Agent</h1>
       <p class="text-sm text-gray-500 mt-1">
         <% if @agent_class %>
           <span class="text-green-600 font-medium">&#10003; <%= @agent_class.name %></span>

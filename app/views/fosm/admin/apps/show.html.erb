@@ -5,7 +5,7 @@
 
   <div class="flex items-start justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-gray-900"><%= @model_class.name.demodulize.humanize %></h1>
+      <h1 class="text-2xl font-bold text-gray-900"><%= @model_class.name.demodulize.titleize %></h1>
       <p class="text-sm text-gray-500"><%= @model_class.name %> &middot; <%= @total %> total records</p>
       <% if @stuck_count > 0 %>
         <p class="text-sm text-amber-600 mt-1">&#x26A0; <%= @stuck_count %> record<%= @stuck_count == 1 ? "" : "s" %> may be stuck (no transition in 7+ days)</p>
@@ -13,12 +13,12 @@
     </div>
     <div class="flex gap-2 shrink-0">
       <% if main_app.respond_to?("fosm_#{@slug.pluralize}_path") %>
-        <%= link_to "View all #{@model_class.name.demodulize.humanize.pluralize}",
+        <%= link_to "View all #{@model_class.name.demodulize.titleize.pluralize}",
                     main_app.send("fosm_#{@slug.pluralize}_path"),
                     class: "text-sm border border-gray-200 bg-white text-gray-700 px-3 py-1.5 rounded hover:bg-gray-50" %>
       <% end %>
       <% if main_app.respond_to?("new_fosm_#{@slug}_path") %>
-        <%= link_to "+ New #{@model_class.name.demodulize.humanize}",
+        <%= link_to "+ New #{@model_class.name.demodulize.titleize}",
                     main_app.send("new_fosm_#{@slug}_path"),
                     class: "text-sm bg-gray-900 text-white px-3 py-1.5 rounded hover:bg-gray-700" %>
       <% end %>

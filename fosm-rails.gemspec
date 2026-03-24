@@ -8,7 +8,7 @@ Gem::Specification.new do |spec|
   spec.homepage    = "https://github.com/inloopstudio/fosm-rails"
   spec.summary     = "Finite Object State Machine for Rails — declarative lifecycles for business objects"
   spec.description = "FOSM gives your Rails models a formal, enforced lifecycle with states, events, guards, side-effects, and an AI agent interface. Business rules live in the model, not scattered across callbacks."
-  spec.license     = "FSL-1.1-Apache-2.0"
+  spec.license     = "Nonstandard" #it is FSL-1.1-Apache-2.0
 
   spec.metadata["homepage_uri"]    = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/inloopstudio/fosm-rails"

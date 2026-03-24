@@ -10,7 +10,7 @@ module Fosm
           {
             slug: slug,
             model_class: model_class,
-            name: model_class.name.demodulize.humanize,
+            name: model_class.name.demodulize.titleize,
             state_counts: state_counts,
             total: model_class.count,
             recent_transitions: Fosm::TransitionLog.for_app(model_class).recent.limit(3)

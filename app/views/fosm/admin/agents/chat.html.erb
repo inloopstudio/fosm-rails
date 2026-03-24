@@ -5,7 +5,7 @@
     <div class="flex items-center gap-3">
       <%= link_to "←", fosm.agent_admin_app_path(@slug), class: "text-gray-400 hover:text-gray-700 text-lg" %>
       <div>
-        <span class="font-semibold text-gray-900 text-sm"><%= @model_class.name.demodulize.humanize %> Agent Chat</span>
+        <span class="font-semibold text-gray-900 text-sm"><%= @model_class.name.demodulize.titleize %> Agent Chat</span>
         <span class="text-xs text-gray-400 ml-2">FOSM bounded autonomy · tools only</span>
       </div>
     </div>
@@ -22,7 +22,7 @@
     <% if @history.empty? %>
       <div id="empty-state" class="flex flex-col items-center justify-center h-full text-center text-gray-400 space-y-2 py-20">
         <div class="text-4xl">🤖</div>
-        <p class="text-sm font-medium text-gray-600">Chat with <%= @model_class.name.demodulize.humanize %> Agent</p>
+        <p class="text-sm font-medium text-gray-600">Chat with <%= @model_class.name.demodulize.titleize %> Agent</p>
         <p class="text-xs max-w-sm">
           The agent can only act via the lifecycle tools — it cannot bypass guards or jump to terminal states directly.
         </p>

@@ -8,7 +8,7 @@
     <div>
       <label class="block text-sm font-medium text-gray-700 mb-1">FOSM App</label>
       <%= f.select :model_class_name,
-                   @apps.map { |slug, klass| [klass.name.demodulize.humanize, klass.name] },
+                   @apps.map { |slug, klass| [klass.name.demodulize.titleize, klass.name] },
                    { prompt: "Select an app" },
                    class: "w-full border border-gray-200 rounded px-3 py-2 text-sm" %>
     </div>
