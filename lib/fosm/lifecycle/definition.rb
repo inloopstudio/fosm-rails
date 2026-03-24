@@ -3,6 +3,7 @@ require_relative "event_definition"
 require_relative "guard_definition"
 require_relative "side_effect_definition"
 require_relative "access_definition"
+require_relative "snapshot_configuration"
 
 module Fosm
   module Lifecycle
@@ -89,8 +90,14 @@ module Fosm
       end
 
       # DSL: declare a side effect on an event
-      def side_effect(name, on:, &block)
-        side_effect_def = SideEffectDefinition.new(name: name, &block)
+      # Options:
+      #   defer: false (default), true — run after transaction commits
+      def side_effect(name, on:, defer: false, &block)
+        side_effect_def = SideEffectDefinition.new(
+          name: name,
+          defer: defer,
+          &block
+        )
         event_def = find_event(on)
         if event_def
           event_def.add_side_effect(side_effect_def)
@@ -123,6 +130,48 @@ module Fosm
       # Returns events valid from the given state
       def available_events_from(state)
         @events.select { |e| e.valid_from?(state) }
+      end
+
+      # DSL: configure automatic state snapshots on transitions
+      # Supports multiple strategies for how often to snapshot:
+      #
+      #   snapshot :every        # snapshot on every transition
+      #   snapshot every: 10      # snapshot every 10 transitions
+      #   snapshot time: 300      # snapshot if >5 min since last snapshot
+      #   snapshot :terminal      # snapshot only when reaching terminal states
+      #   snapshot :manual        # only snapshot when explicitly requested (default)
+      #
+      #   snapshot_attributes :amount, :due_date, :line_items_count
+      #
+      def snapshot(strategy = nil, **options)
+        @snapshot_configuration ||= SnapshotConfiguration.new
+
+        if strategy.is_a?(Symbol) || strategy.is_a?(String)
+          @snapshot_configuration.send(strategy)
+        elsif options[:every]
+          @snapshot_configuration.count(options[:every])
+        elsif options[:time]
+          @snapshot_configuration.time(options[:time])
+        end
+
+        @snapshot_configuration
+      end
+
+      # DSL: specify which attributes to include in snapshots
+      # Usage: snapshot_attributes :amount, :status, :line_items_count
+      def snapshot_attributes(*attrs)
+        @snapshot_configuration ||= SnapshotConfiguration.new
+        @snapshot_configuration.set_attributes(*attrs)
+      end
+
+      # Returns true if snapshot configuration has been set
+      def snapshot_configured?
+        @snapshot_configuration.present?
+      end
+
+      # Returns the snapshot configuration (nil if not configured)
+      def snapshot_configuration
+        @snapshot_configuration
       end
 
       # Returns a hash suitable for rendering a state diagram

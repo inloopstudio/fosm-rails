@@ -13,7 +13,7 @@ module Fosm
         { name: "OpenAI",              env_key: "OPENAI_API_KEY",       model_prefix: "openai/" },
         { name: "Google (Gemini)",     env_key: "GEMINI_API_KEY",       model_prefix: "gemini/" },
         { name: "Cohere",              env_key: "COHERE_API_KEY",       model_prefix: "cohere/" },
-        { name: "Mistral",             env_key: "MISTRAL_API_KEY",      model_prefix: "mistral/" },
+        { name: "Mistral",             env_key: "MISTRAL_API_KEY",      model_prefix: "mistral/" }
       ].freeze
 
       def detect_llm_providers

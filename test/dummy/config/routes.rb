@@ -1,3 +1,3 @@
 Rails.application.routes.draw do
-  mount Fosm::Rails::Engine => "/fosm-rails"
+  mount Fosm::Engine => "/fosm"
 end
