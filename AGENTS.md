@@ -409,6 +409,67 @@ end
 
 ---
 
+## Database configuration and connection pools
+
+### Single-database apps (the common case)
+
+`Fosm::ApplicationRecord` does **not** create a separate Active Record connection pool unless the host app explicitly opts in. This is the correct default for any app with a single database (SQLite, PostgreSQL, MySQL).
+
+Do not add a `primary:` database role expecting FOSM to use it — the name `primary` is what Rails assigns to **every** database.yml entry by default, so that condition would fire for all apps and create a redundant pool on the same database.
+
+### Why a redundant pool deadlocks
+
+When two separate pools both write to the same database inside nested transactions — which happens automatically when a `Fosm::*` model with `has_one_attached` / `has_many_attached` is saved, or when `ActiveRecord::Base.transaction` wraps a `Fosm::*` save — the result is a structural cross-pool deadlock:
+
+```
+Fosm pool  →  BEGIN TRANSACTION          # holds write lock
+Fosm pool  →  INSERT INTO fosm_*         # succeeds
+Fosm pool  →  [after_save] ActiveStorage # needs App pool write lock
+App pool   →  BEGIN TRANSACTION          # blocked waiting for Fosm pool
+Fosm pool  →  waiting for after_save…    # blocked waiting for App pool
+→ DEADLOCK — neither pool can proceed
+```
+
+This is deterministic, not a race condition. `busy_timeout` and WAL mode do not resolve it because neither mechanism can break a structural deadlock between two pools.
+
+### Opting in to a dedicated FOSM database
+
+If your app requires FOSM models on a separate database (e.g., a read replica, a separate shard, or a compliance-isolated store), declare a `fosm` role in `database.yml`:
+
+```yaml
+# config/database.yml
+default: &default
+  adapter: sqlite3
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+
+development:
+  <<: *default
+  database: db/development.sqlite3
+
+fosm:
+  <<: *default
+  database: db/fosm.sqlite3   # separate file / separate PostgreSQL URL
+```
+
+`Fosm::ApplicationRecord` detects the `fosm` role at boot via `find_db_config("fosm")` and calls `connects_to database: { writing: :fosm }`. Without this entry, FOSM shares the host app's default pool.
+
+### Workaround for apps affected by the old behavior (pre-0.2.2)
+
+If you are on a version earlier than 0.2.2 and cannot upgrade immediately, create this file in your host app to override the gem's class. Zeitwerk gives app files precedence over engine files:
+
+```ruby
+# app/models/fosm/application_record.rb  (in the HOST app, not the gem)
+module Fosm
+  class ApplicationRecord < ::ApplicationRecord
+    self.abstract_class = true
+  end
+end
+```
+
+This collapses the Fosm pool into the app's default pool, eliminating the deadlock. Upgrade to 0.2.2 and remove this file when possible.
+
+---
+
 ## Contributing guidelines
 
 1. **Read the design principles above** before writing any code

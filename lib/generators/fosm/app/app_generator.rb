@@ -64,6 +64,29 @@ module Fosm
           or `app/agents/fosm/`, you **must** read and follow the instructions in:
 
           `#{agents_md_path}`
+
+          ### Database / connection pool (IMPORTANT — read before touching database.yml)
+
+          `Fosm::ApplicationRecord` only creates a separate Active Record connection pool
+          when the host app has a `fosm:` role in `database.yml`. Without it, all FOSM
+          models share the default app pool — this is correct for single-database setups.
+
+          **Do NOT** add a `primary:` database role for FOSM. `primary` is the default role
+          name Rails assigns to every `database.yml` entry, so that condition would create a
+          redundant pool on the same database and cause a deterministic cross-pool deadlock
+          whenever a `Fosm::*` model with `has_one_attached` / `has_many_attached` is saved,
+          or when `ActiveRecord::Base.transaction` wraps a `Fosm::*` save.
+
+          To opt in to a dedicated FOSM database, add this to `database.yml`:
+
+          ```yaml
+          fosm:
+            <<: *default
+            database: db/fosm.sqlite3   # or a separate PostgreSQL/MySQL URL
+          ```
+
+          See the "Database configuration and connection pools" section in AGENTS.md for
+          the full explanation and the pre-0.2.2 workaround.
         MARKDOWN
 
         if File.exist?(claude_md)
