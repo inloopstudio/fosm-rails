@@ -6,7 +6,7 @@ module Fosm
   # at most a brief delay between the transition completing and the log entry
   # appearing. For strict consistency, use config.transition_log_strategy = :sync.
   class TransitionLogJob < Fosm::ApplicationJob
-    queue_as :fosm_audit
+    queue_as { Fosm.config.transition_log_job_queue }
 
     # @param log_data [Hash] all columns for the transition log row (string keys)
     def perform(log_data)

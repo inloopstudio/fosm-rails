@@ -286,15 +286,17 @@ module Fosm
         Fosm::TransitionBuffer.push(log_data)
       end
 
-      # Deliver webhooks asynchronously (outside transaction, always)
-      Fosm::WebhookDeliveryJob.perform_later(
-        record_type: self.class.name,
-        record_id:   self.id.to_s,
-        event_name:  event_name.to_s,
-        from_state:  from_state,
-        to_state:    to_state,
-        metadata:    metadata
-      )
+      # Deliver webhooks asynchronously (outside transaction, skipped when disabled)
+      if Fosm.config.webhooks_enabled
+        Fosm::WebhookDeliveryJob.perform_later(
+          record_type: self.class.name,
+          record_id:   self.id.to_s,
+          event_name:  event_name.to_s,
+          from_state:  from_state,
+          to_state:    to_state,
+          metadata:    metadata
+        )
+      end
 
       true
     end

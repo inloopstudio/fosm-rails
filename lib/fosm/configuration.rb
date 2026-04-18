@@ -34,6 +34,28 @@ module Fosm
     #   config.transition_log_strategy = :async
     attr_accessor :transition_log_strategy
 
+    # Queue name for Fosm::WebhookDeliveryJob.
+    # Webhook delivery is fire-and-forget; route it to a low-priority queue to
+    # avoid competing with user-facing jobs on the default queue.
+    #
+    # Example:
+    #   config.webhook_job_queue = :low
+    attr_accessor :webhook_job_queue
+
+    # Queue name for Fosm::TransitionLogJob (used when transition_log_strategy = :async).
+    #
+    # Example:
+    #   config.transition_log_job_queue = :low
+    attr_accessor :transition_log_job_queue
+
+    # When false, skip enqueuing WebhookDeliveryJob after every transition.
+    # Set to false if your app has no webhook subscriptions to eliminate
+    # unnecessary queue writes (reduces SQLite write pressure).
+    #
+    # Example:
+    #   config.webhooks_enabled = false
+    attr_accessor :webhooks_enabled
+
     def initialize
       @base_controller          = "ApplicationController"
       @admin_authorize          = -> { true } # Override in initializer!
@@ -42,6 +64,9 @@ module Fosm
       @admin_layout             = "fosm/application"
       @app_layout               = "application"
       @transition_log_strategy  = :sync
+      @webhook_job_queue        = :default
+      @transition_log_job_queue = :fosm_audit
+      @webhooks_enabled         = true
     end
   end
 

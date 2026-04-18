@@ -2,7 +2,7 @@ module Fosm
   # Delivers webhook payloads to configured endpoints when FOSM events fire.
   # Runs asynchronously after the transition completes.
   class WebhookDeliveryJob < ApplicationJob
-    queue_as :default
+    queue_as { Fosm.config.webhook_job_queue }
     retry_on StandardError, wait: :polynomially_longer, attempts: 5
 
     def perform(record_type:, record_id:, event_name:, from_state:, to_state:, metadata: {})
