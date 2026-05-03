@@ -23,7 +23,13 @@ module Fosm
       end
 
       def model_classes
-        @registered.values
+        @registered.values.map { |klass| klass.name.constantize rescue klass }
+      end
+
+      def slug_for(model_class)
+        target_name = model_class.name
+        @registered.each { |slug, klass| return slug if klass.name == target_name }
+        nil
       end
 
       def slugs

@@ -6,6 +6,7 @@ require "fosm/registry"
 require "fosm/current"
 require "fosm/transition_buffer"
 require "fosm/lifecycle"
+require "fosm/data_retention"
 require "fosm/agent"
 require "fosm/engine"
 

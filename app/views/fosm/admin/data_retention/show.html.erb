@@ -1,0 +1,124 @@
+<div class="p-6 space-y-6">
+
+  <!-- Breadcrumb + header -->
+  <div>
+    <%= link_to "&larr; Data Archival".html_safe,
+        fosm.admin_data_retention_index_path,
+        class: "text-sm text-gray-400 hover:text-gray-600 mb-2 block" %>
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900"><%= @name %></h1>
+        <p class="text-sm text-gray-500 mt-1">
+          Records archived before
+          <strong><%= @cutoff_date.strftime("%b %d, %Y") %></strong>
+          (<%= @retention_days %>-day policy) &mdash;
+          <strong><%= @total %></strong> record(s) eligible for purge.
+        </p>
+        <p class="text-xs text-gray-400 mt-0.5">
+          Archival states:
+          <% @archival_states.each do |s| %>
+            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 font-mono"><%= s %></span>
+          <% end %>
+        </p>
+      </div>
+
+      <% if @total > 0 %>
+        <%= button_to fosm.purge_all_expired_admin_data_retention_path(@slug),
+            method: :post,
+            data: {
+              confirm: "This will permanently delete ALL #{@total} eligible #{@name} record(s). " \
+                       "Transition logs will be preserved. This cannot be undone. Continue?"
+            },
+            class: "shrink-0 bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-red-700 transition" do %>
+          Purge All <%= @total %> Eligible
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+
+  <!-- Records table -->
+  <% if @records.empty? %>
+    <div class="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+      <p class="text-gray-500 font-medium">No records eligible for purge</p>
+      <p class="text-xs text-gray-400 mt-1">
+        All archived records are within the <%= @retention_days %>-day retention window.
+      </p>
+    </div>
+  <% else %>
+    <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
+          <tr>
+            <th class="px-4 py-3 text-left">ID</th>
+            <th class="px-4 py-3 text-left">State</th>
+            <th class="px-4 py-3 text-left">Archived At</th>
+            <th class="px-4 py-3 text-left">Retention Age</th>
+            <th class="px-4 py-3 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <% @records.each do |record| %>
+            <tr class="hover:bg-gray-50">
+              <td class="px-4 py-3 text-gray-600 font-mono text-xs">#<%= record.id %></td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                  <%= record.state %>
+                </span>
+              </td>
+              <td class="px-4 py-3 text-gray-600 text-xs">
+                <%= record.archived_at&.strftime("%b %d, %Y %H:%M") %> UTC
+              </td>
+              <td class="px-4 py-3 text-xs">
+                <% days_overdue = ((Time.current - record.archived_at) / 1.day).round %>
+                <span class="text-red-600 font-medium"><%= days_overdue %> days</span>
+                <span class="text-gray-400">(+<%= days_overdue - @retention_days %> past window)</span>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <%= button_to fosm.purge_record_admin_data_retention_path(@slug),
+                    params: { record_id: record.id },
+                    method: :post,
+                    data: {
+                      confirm: "Permanently delete #{@name} ##{record.id}? " \
+                               "Transition logs will be preserved. This cannot be undone."
+                    },
+                    class: "text-xs font-medium text-red-600 hover:text-red-800 border border-red-200 hover:border-red-400 px-2 py-1 rounded hover:bg-red-50 transition" do %>
+                  Purge
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    <% if @total_pages > 1 %>
+      <div class="flex items-center justify-between text-sm text-gray-600">
+        <span>
+          Showing page <%= @page %> of <%= @total_pages %>
+          &middot; <%= @total %> total records eligible
+        </span>
+        <div class="flex gap-2">
+          <% if @page > 1 %>
+            <%= link_to "&larr; Previous".html_safe,
+                fosm.admin_data_retention_path(@slug, page: @page - 1),
+                class: "px-3 py-1.5 border border-gray-200 rounded text-sm hover:bg-gray-50 transition" %>
+          <% end %>
+          <% if @page < @total_pages %>
+            <%= link_to "Next &rarr;".html_safe,
+                fosm.admin_data_retention_path(@slug, page: @page + 1),
+                class: "px-3 py-1.5 border border-gray-200 rounded text-sm hover:bg-gray-50 transition" %>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  <% end %>
+
+  <!-- Compliance reminder -->
+  <div class="text-xs text-gray-400 border-t border-gray-100 pt-4">
+    Purge operations run asynchronously via <code>Fosm::DataRetentionPurgeJob</code>.
+    Each record is re-verified against the retention window before deletion.
+    Transition audit logs are never deleted.
+  </div>
+
+</div>

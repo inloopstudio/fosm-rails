@@ -18,5 +18,11 @@ Fosm::Engine.routes.draw do
       end
     end
     resource :settings,    only: [ :show ]
+    resources :data_retention, only: [ :index, :show ] do
+      member do
+        post :purge_record
+        post :purge_all_expired
+      end
+    end
   end
 end

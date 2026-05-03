@@ -1,4 +1,8 @@
 module Fosm
+  # Default data retention period in days (10 years).
+  # Override per-project via: config.data_retention_days = 2555  # 7 years
+  DATA_RETENTION_DEFAULT_DAYS = 3650
+
   class Configuration
     # The base controller class the engine's controllers will inherit from.
     # Set this to match your app's ApplicationController.
@@ -56,6 +60,15 @@ module Fosm
     #   config.webhooks_enabled = false
     attr_accessor :webhooks_enabled
 
+    # Data retention policy in days. Records in an archival terminal state
+    # (state name contains "archiv") with an `archived_at` timestamp older
+    # than this many days are eligible for purge from the Data Archival admin.
+    #
+    # Gem default: Fosm::DATA_RETENTION_DEFAULT_DAYS (3650 = 10 years).
+    # Override per-project in config/initializers/fosm.rb:
+    #   config.data_retention_days = 2555  # 7 years
+    attr_accessor :data_retention_days
+
     def initialize
       @base_controller          = "ApplicationController"
       @admin_authorize          = -> { true } # Override in initializer!
@@ -67,6 +80,7 @@ module Fosm
       @webhook_job_queue        = :default
       @transition_log_job_queue = :fosm_audit
       @webhooks_enabled         = true
+      @data_retention_days      = Fosm::DATA_RETENTION_DEFAULT_DAYS
     end
   end
 

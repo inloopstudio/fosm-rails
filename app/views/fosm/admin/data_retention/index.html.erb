@@ -1,0 +1,68 @@
+<div class="p-6 space-y-6">
+
+  <!-- Header -->
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Data Archival &amp; Deletion</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Retention policy: <strong><%= @retention_days %> days</strong>
+      &mdash; records archived before
+      <strong><%= @cutoff_date.strftime("%b %d, %Y") %></strong>
+      are eligible for purge.
+    </p>
+  </div>
+
+  <!-- Compliance notice -->
+  <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800 flex gap-3">
+    <span class="text-amber-500 text-lg leading-none">&#9888;</span>
+    <div>
+      <strong>Compliance notice:</strong> Purging permanently deletes business records.
+      Transition logs (<code class="bg-amber-100 px-1 rounded">fosm_transition_logs</code>)
+      are <em>always</em> preserved for audit compliance — only the source records are removed.
+      Configure <code class="bg-amber-100 px-1 rounded">config.data_retention_days</code>
+      in <code class="bg-amber-100 px-1 rounded">config/initializers/fosm.rb</code>.
+    </div>
+  </div>
+
+  <!-- Model cards -->
+  <% if @eligible_models.empty? %>
+    <div class="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+      <h2 class="font-semibold text-gray-700">No archival-eligible models found</h2>
+      <p class="text-sm text-gray-500 mt-2 max-w-md mx-auto">
+        A model is eligible when it has a terminal state containing
+        <code class="bg-gray-100 px-1 rounded">archiv</code>
+        (e.g. <code class="bg-gray-100 px-1 rounded">:archived</code>)
+        <em>and</em> an
+        <code class="bg-gray-100 px-1 rounded">archived_at</code>
+        datetime column on its table.
+      </p>
+    </div>
+  <% else %>
+    <div class="space-y-3">
+      <% @eligible_models.each do |model| %>
+        <div class="bg-white border border-gray-200 rounded-lg p-5 flex items-center justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <h2 class="font-semibold text-gray-900"><%= model[:name] %></h2>
+            <p class="text-xs text-gray-400 mt-0.5">
+              Archival states:
+              <% model[:archival_states].each do |s| %>
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 font-mono"><%= s %></span>
+              <% end %>
+              &middot;
+              <%= model[:total_in_archive] %> total in archive
+            </p>
+          </div>
+          <div class="text-right shrink-0">
+            <p class="text-2xl font-bold <%= model[:eligible_for_purge] > 0 ? 'text-red-600' : 'text-gray-300' %>">
+              <%= model[:eligible_for_purge] %>
+            </p>
+            <p class="text-xs text-gray-500">eligible for purge</p>
+          </div>
+          <%= link_to "Manage &rarr;".html_safe,
+              fosm.admin_data_retention_path(model[:slug]),
+              class: "shrink-0 text-sm text-blue-600 hover:underline font-medium" %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+</div>
