@@ -337,6 +337,7 @@ The engine mounts an admin interface at `/fosm/admin` (access controlled by `con
 - **Role assignments** (`/fosm/admin/roles`) — grant/revoke roles, view declared roles per app, browse immutable access event audit trail; accessible only to `config.admin_authorize` actors
 - **Agent explorer** (`/fosm/admin/apps/:slug/agent`) — the auto-generated tool catalog for the app's AI agent, a direct tool tester (no LLM required), and the system prompt injected into agents
 - **Agent chat** (`/fosm/admin/apps/:slug/agent/chat`) — live multi-turn chat with the agent; see tool calls, thoughts, and state changes in real time
+- **Data retention** (`/fosm/admin/data_retention`) — configurable retention policies (default 10 years) with a dashboard showing purge-eligible records per model. Supports single-record and bulk purge with safe-to-purge guards; transition logs are never deleted.
 - **Transition log** — complete audit trail, filterable by app / event / actor (human vs AI agent)
 - **Webhooks** — configure HTTP callbacks for any FOSM event (with HMAC-SHA256 signing)
 - **Settings** — LLM provider key status, engine configuration overview
