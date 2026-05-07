@@ -122,12 +122,21 @@
         })();
       </script>
 
+      <%# Build a JSON map: { "Fosm::PartnershipAgreement" => ["owner","viewer"], ... }
+          Used by the JS below to filter Role Name options when resource type changes. %>
+      <% roles_by_type = @apps.each_with_object({}) { |(_, klass), h|
+           next unless klass.fosm_lifecycle&.access_defined?
+           h[klass.name] = klass.fosm_lifecycle.access_definition.role_names.map(&:to_s).sort
+         } %>
+
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Resource Type</label>
         <%= f.select :resource_type,
             @apps.map { |_, klass| [klass.name.demodulize, klass.name] },
             { include_blank: "— Select a FOSM app —" },
-            class: "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" %>
+            id: "role_assignment_resource_type",
+            class: "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500",
+            data: { roles: roles_by_type.to_json } %>
       </div>
 
       <div>
@@ -141,29 +150,130 @@
         </p>
       </div>
 
-      <div>
+      <div id="role-name-field">
         <label class="block text-sm font-medium text-gray-700 mb-1">Role Name</label>
-        <% role_options = @apps.flat_map { |_, klass|
-             next [] unless klass.fosm_lifecycle&.access_defined?
-             klass.fosm_lifecycle.access_definition.role_names.map { |rn|
-               ["#{klass.name.demodulize} → :#{rn}", rn.to_s]
-             }
-           }.uniq(&:last) %>
-        <% if role_options.any? %>
+        <%# Initial render: all known roles sorted. JS narrows this on resource type change. %>
+        <% all_roles = roles_by_type.values.flatten.uniq.sort %>
+        <% if all_roles.any? %>
           <%= f.select :role_name,
-              role_options,
+              all_roles.map { |rn| [":#{rn}", rn] },
               { include_blank: "— Select a role —" },
+              id: "role_assignment_role_name",
               class: "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" %>
         <% else %>
-          <%= f.text_field :role_name,
-              placeholder: "owner, approver, viewer…",
+          <%= f.select :role_name,
+              [],
+              { include_blank: "— Select a role —" },
+              id: "role_assignment_role_name",
               class: "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" %>
         <% end %>
-        <p class="text-xs text-gray-400 mt-1">Must match a role declared in the lifecycle <code>access</code> block.</p>
+        <p class="text-xs text-gray-400 mt-1" id="role-name-hint">
+          Must match a role declared in the lifecycle <code>access</code> block.
+        </p>
       </div>
+
+      <div id="no-rbac-warning" class="hidden rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <strong>No RBAC on this resource type.</strong>
+        <span id="no-rbac-warning-name"></span> has no <code>access</code> block in its lifecycle —
+        all authenticated users can already fire any transition.
+        Role assignments for this type would be stored but never enforced.
+      </div>
+
+      <script>
+        (function() {
+          var resourceSelect = document.getElementById('role_assignment_resource_type');
+          var roleField      = document.getElementById('role-name-field');
+          var roleHint       = document.getElementById('role-name-hint');
+          var warning        = document.getElementById('no-rbac-warning');
+          var warningName    = document.getElementById('no-rbac-warning-name');
+          var rolesByType    = JSON.parse(resourceSelect.dataset.roles || '{}');
+
+          // Looked up lazily — the submit button appears after this script tag in the DOM.
+          function submitBtn() { return document.getElementById('role-grant-submit'); }
+
+          function currentRoleInput() {
+            return document.getElementById('role_assignment_role_name');
+          }
+
+          function allRoles() {
+            return Object.values(rolesByType).flat()
+              .filter(function(v, i, a) { return a.indexOf(v) === i; })
+              .sort();
+          }
+
+          function buildSelect(roles, inputName, inputClass) {
+            var sel = document.createElement('select');
+            sel.id        = 'role_assignment_role_name';
+            sel.name      = inputName;
+            sel.className = inputClass;
+            var blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = '— Select a role —';
+            sel.appendChild(blank);
+            roles.forEach(function(rn) {
+              var opt = document.createElement('option');
+              opt.value = rn;
+              opt.textContent = ':' + rn;
+              sel.appendChild(opt);
+            });
+            return sel;
+          }
+
+          function replaceInput(newEl) {
+            var old = currentRoleInput();
+            old.parentNode.replaceChild(newEl, old);
+          }
+
+          function setNoRbac(typeName) {
+            roleField.classList.add('hidden');
+            warning.classList.remove('hidden');
+            warningName.textContent = ' ' + typeName;
+            var btn = submitBtn();
+            if (btn) {
+              btn.disabled = true;
+              btn.classList.add('opacity-50', 'cursor-not-allowed');
+              btn.classList.remove('hover:bg-gray-700', 'cursor-pointer');
+            }
+          }
+
+          function clearNoRbac() {
+            roleField.classList.remove('hidden');
+            warning.classList.add('hidden');
+            warningName.textContent = '';
+            var btn = submitBtn();
+            if (btn) {
+              btn.disabled = false;
+              btn.classList.remove('opacity-50', 'cursor-not-allowed');
+              btn.classList.add('hover:bg-gray-700', 'cursor-pointer');
+            }
+          }
+
+          resourceSelect.addEventListener('change', function() {
+            var selectedType = resourceSelect.value;
+            var old          = currentRoleInput();
+            var inputName    = old.name;
+            var inputClass   = old.className;
+            var roles        = rolesByType[selectedType];
+
+            if (!selectedType) {
+              clearNoRbac();
+              replaceInput(buildSelect(allRoles(), inputName, inputClass));
+              roleHint.innerHTML = 'Must match a role declared in the lifecycle <code>access</code> block.';
+            } else if (roles && roles.length > 0) {
+              clearNoRbac();
+              replaceInput(buildSelect(roles, inputName, inputClass));
+              roleHint.textContent = roles.length + ' role' + (roles.length !== 1 ? 's' : '') +
+                ' available for ' + selectedType.split('::').pop() + '.';
+            } else {
+              setNoRbac(selectedType.split('::').pop());
+            }
+          });
+        })();
+      </script>
 
       <div class="flex items-center gap-3 pt-2">
         <%= f.submit "Grant Role",
+            id: "role-grant-submit",
             class: "bg-gray-900 text-white text-sm px-4 py-2 rounded hover:bg-gray-700 cursor-pointer" %>
         <%= link_to "Cancel", fosm.admin_roles_path,
             class: "text-sm text-gray-500 hover:underline" %>

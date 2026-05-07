@@ -100,7 +100,7 @@ module Fosm
       private
 
       def assignment_params
-        params.require(:fosm_role_assignment).permit(
+        params.require(:role_assignment).permit(
           :user_type, :user_id, :resource_type, :resource_id, :role_name
         )
       end
