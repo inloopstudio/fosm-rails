@@ -264,16 +264,23 @@ module Fosm
           Thread.current[:fosm_trigger_context] = nil
         end
 
-        # 🆕 Queue deferred side effects to run after commit
+        # Collect deferred side effects to run after the transaction commits.
+        # We store them on self and execute directly after the transaction block
+        # rather than wiring through AR's after_commit callback chain — the
+        # callback would be registered AFTER the update! that triggers it, so it
+        # would never fire for this transaction.
         deferred_effects = event_def.side_effects.select(&:deferred?)
         if deferred_effects.any?
-          # Set instance variables on locked_record (the instance that gets saved)
-          # so after_commit callback can access them
-          locked_record.instance_variable_set(:@_fosm_deferred_side_effects, deferred_effects)
-          locked_record.instance_variable_set(:@_fosm_transition_data, transition_data)
-          # Use after_commit to run after transaction completes
-          locked_record.class.after_commit :_fosm_run_deferred_side_effects, on: :update
+          @_fosm_deferred_side_effects = deferred_effects
+          @_fosm_transition_data = transition_data
         end
+      end
+
+      # Run deferred side effects after the transaction has committed.
+      # They execute outside the transaction so failures don't roll back
+      # the state change (matching the original after_commit intent).
+      if defined?(@_fosm_deferred_side_effects) && @_fosm_deferred_side_effects
+        _fosm_run_deferred_side_effects
       end
 
       # :async strategy — enqueue job after transaction commits (non-blocking)
@@ -601,8 +608,11 @@ module Fosm
       actor.respond_to?(:email) ? actor.email : actor.to_s
     end
 
-    # Run deferred side effects after transaction commits
-    # This prevents SQLite locking when cross-machine triggers occur
+    # Run deferred side effects after the transaction commits.
+    # Called directly from fire! after the transaction block closes,
+    # rather than via AR's after_commit callback (which would suffer from
+    # a registration ordering problem — the callback must be registered
+    # before the update! that triggers it).
     def _fosm_run_deferred_side_effects
       return unless defined?(@_fosm_deferred_side_effects) && @_fosm_deferred_side_effects
 
@@ -630,9 +640,6 @@ module Fosm
         @_fosm_deferred_side_effects = nil
         @_fosm_transition_data = nil
       end
-
-      # Remove the after_commit callback to avoid running on subsequent updates
-      self.class.skip_callback(:commit, :after, :_fosm_run_deferred_side_effects, on: :update, raise: false)
     end
 
     # Determine the reason string for a snapshot based on strategy and context
