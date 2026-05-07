@@ -114,23 +114,22 @@ module Fosm
       end
     end
 
-    # Auto-register all Fosm models with the registry after app loads.
+    # Re-register all Fosm models after every code reload (development) and
+    # once at boot (all environments).  to_prepare fires on every reload in
+    # development, and once in production/test — making the registry always
+    # consistent with the currently-loaded class objects.
     # Use ::Rails to avoid ambiguity with Fosm::Rails module.
-    config.after_initialize do
+    config.to_prepare do
       ::Rails.application.eager_load! if ::Rails.env.development? && !::Rails.application.config.eager_load
 
-      ObjectSpace.each_object(Class).select { |klass|
-        klass < ActiveRecord::Base &&
-          klass.name&.start_with?("Fosm::") &&
-          klass.respond_to?(:fosm_lifecycle) &&
-          klass.fosm_lifecycle.present?
-      }.each do |klass|
-        slug = klass.name.demodulize.underscore
-        Fosm::Registry.register(klass, slug: slug)
-      end
+      Fosm::Registry.clear!
+      Fosm::Registry.repopulate!
+    end
 
-      # Start the background flusher thread for the :buffered log strategy.
-      # Only starts in long-running server processes (not in test/rake/console tasks).
+    # Start the background flusher thread for the :buffered log strategy.
+    # Kept in after_initialize (runs once) so the thread is not re-spawned on
+    # every development reload.
+    config.after_initialize do
       if Fosm.config.transition_log_strategy == :buffered && !::Rails.env.test?
         Fosm::TransitionBuffer.start_flusher!
       end
