@@ -206,7 +206,7 @@ class FosmRaceConditionTest < ActiveSupport::TestCase
     # - If side effects are slow, other operations block
     # - With :async log strategy, lock held while enqueuing job (fast)
     # - With :sync log strategy, lock held during INSERT (still fast)
-    # - With deferred side effects, lock held through after_commit (problematic)
+    # - With deferred side effects, lock released before they run (deferred runs post-commit)
   end
 
   # ============================================================================
@@ -304,7 +304,7 @@ end
 #   2. Re-validate state, guards, and RBAC after lock acquisition
 #   3. Use `locked_record.update!(state: to_state)` inside transaction
 #   4. Sync `self.state = to_state` after update
-#   5. Set deferred side effect instance variables on locked_record (for after_commit)
+#   5. Store deferred side effects on self, run directly after transaction commits
 #
 # Race condition is now prevented:
 # - Second transaction blocks on lock until first commits
