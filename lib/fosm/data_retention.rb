@@ -109,7 +109,7 @@ module Fosm
       # @param per_page [Integer] max records per page
       # @return [ActiveRecord::Relation]
       def records_eligible_for_purge(model_class, page: 1, per_page: 50)
-        offset = ([page.to_i, 1].max - 1) * per_page
+        offset = ([ page.to_i, 1 ].max - 1) * per_page
         eligible_scope(model_class).offset(offset).limit(per_page)
       end
 

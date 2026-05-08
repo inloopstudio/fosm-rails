@@ -41,9 +41,9 @@ module Fosm
         @cutoff_date     = Fosm::DataRetention.retention_cutoff_date
         @archival_states = Fosm::DataRetention.archival_states_for(@model_class)
 
-        @page        = [params[:page].to_i, 1].max
+        @page        = [ params[:page].to_i, 1 ].max
         @total       = Fosm::DataRetention.total_eligible_for_purge(@model_class)
-        @total_pages = [(@total.to_f / PER_PAGE).ceil, 1].max
+        @total_pages = [ (@total.to_f / PER_PAGE).ceil, 1 ].max
         @records     = Fosm::DataRetention.records_eligible_for_purge(
           @model_class, page: @page, per_page: PER_PAGE
         )
